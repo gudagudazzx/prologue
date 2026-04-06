@@ -359,9 +359,9 @@ const TTS = (()=>{
     const vc = mmVoiceCfg(role);
     try {
       const res = await fetch(apiUrl, {
-         method: 'POST',
-         headers: headers,
-         body: JSON.stringify({
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
           model:    CFG.minimax.model,
           text:     text,
           voice_id: vc.id,
@@ -374,9 +374,11 @@ const TTS = (()=>{
           bitrate:  128000,
         }),
       });
+
       // 获取响应文本并打印（用于调试）
       const responseText = await res.text();
       console.log('[MiniMax] Response body:', responseText);
+
       // 尝试解析 JSON
       let data;
       try {
@@ -386,33 +388,22 @@ const TTS = (()=>{
         return null;
       }
 
-if (!res.ok) {
-  console.warn('[MiniMax TTS] HTTP', res.status);
-  return null;
-}
+      if (!res.ok) {
+        console.warn('[MiniMax TTS] HTTP', res.status);
+        return null;
+      }
 
-if (data?.base_resp?.status_code !== 0 && data?.base_resp?.status_code !== undefined) {
-  console.warn('[MiniMax TTS] API error:', data?.base_resp?.status_msg);
-  return null;
-}
-const b64 = data.audio_file;
-// ... 后续代码保持不变
-  
-if (!res.ok) {
-  console.warn('[MiniMax TTS] HTTP', res.status);
-  return null;
-}
+      if (data?.base_resp?.status_code !== 0 && data?.base_resp?.status_code !== undefined) {
+        console.warn('[MiniMax TTS] API error:', data?.base_resp?.status_msg);
+        return null;
+      }
 
-if (data?.base_resp?.status_code !== 0 && data?.base_resp?.status_code !== undefined) {
-  console.warn('[MiniMax TTS] API error:', data?.base_resp?.status_msg);
-  return null;
-}
-const b64 = data.audio_file;
-// ... 后续代码保持不变
+      const b64 = data.audio_file;
       if (!b64) {
         console.warn('[MiniMax TTS] no audio_file in response');
         return null;
       }
+
       const binStr = atob(b64);
       const bytes = new Uint8Array(binStr.length);
       for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
