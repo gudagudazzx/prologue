@@ -103,17 +103,13 @@ const CFG={
   minimax:{
     model: 'speech-02-turbo',   // turbo = fast (real-time feel); hd = higher quality
     endpoint: 'https://api.minimax.io/v1/t2a_v2',
-    voices:{
-      // Interviewer — calm, authoritative, measured male voice
-      challenger: { id:'male-qn-jingying', speed:0.90, vol:1.0, pitch:0,  emotion:'neutral' },
-      // Mentor — warm, encouraging female voice
-      mentor:     { id:'female-shaonv',    speed:0.95, vol:1.0, pitch:0,  emotion:'happy'   },
-      // Debater — energetic, passionate female voice
-      debater:    { id:'female-yujie',     speed:1.05, vol:1.0, pitch:0,  emotion:'happy'   },
-      // Listener — gentle, soft female voice
-      listener:   { id:'female-tianmei',   speed:0.92, vol:1.0, pitch:-1, emotion:'neutral' },
-      // Friendly interviewer — warm, professional female voice
-      friendly:   { id:'female-shaonv',    speed:0.93, vol:1.0, pitch:0,  emotion:'happy'   },
+    voices: {
+        // 修改这里 ↓
+        challenger: { id: 'English_magnetic_voiced_man', ... }, 
+        mentor:     { id: 'English_radiant_girl', ... }, 
+        debater:    { id: 'English_Debator', ... },
+        listener:   { id: 'English_CalmWoman', ... },
+        friendly:   { id: 'English_radiant_girl', ... },
     }
   },
   providers:{
