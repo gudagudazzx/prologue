@@ -398,7 +398,7 @@ const TTS = (()=>{
         return null;
       }
 
-      const b64 = data.audio_file;
+      const b64 = data?.data?.audio || data?.audio_file;
       if (!b64) {
         console.warn('[MiniMax TTS] no audio_file in response');
         return null;
