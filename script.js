@@ -98,18 +98,22 @@ const CFG={
   MAX_RETRIES:3,
   DEBATE_ROUNDS:6,
   ST_TURNS:8,
-  // MiniMax voice IDs for each character
-  // Full list: https://platform.minimax.io/docs/api-reference/speech-t2a
+  // MiniMax voice IDs for each character (English voices)
+  // Full list: https://platform.minimax.io/docs/faq/system-voice-id
   minimax:{
     model: 'speech-02-turbo',   // turbo = fast (real-time feel); hd = higher quality
     endpoint: 'https://api.minimax.io/v1/t2a_v2',
-    voices: {
-        // 修改这里 ↓
-        challenger: { id: 'English_magnetic_voiced_man', ... }, 
-        mentor:     { id: 'English_radiant_girl', ... }, 
-        debater:    { id: 'English_Debator', ... },
-        listener:   { id: 'English_CalmWoman', ... },
-        friendly:   { id: 'English_radiant_girl', ... },
+    voices:{
+      // Interviewer — calm, authoritative, measured male voice (English)
+      challenger: { id:'English_magnetic_voiced_man', speed:0.90, vol:1.0, pitch:0,  emotion:'neutral' },
+      // Mentor — warm, encouraging female voice (English)
+      mentor:     { id:'English_radiant_girl',        speed:0.95, vol:1.0, pitch:0,  emotion:'happy'   },
+      // Debater — energetic, passionate voice (English)
+      debater:    { id:'English_Debator',             speed:1.05, vol:1.0, pitch:0,  emotion:'happy'   },
+      // Listener — gentle, soft female voice (English)
+      listener:   { id:'English_CalmWoman',           speed:0.92, vol:1.0, pitch:-1, emotion:'neutral' },
+      // Friendly interviewer — warm, professional female voice (English)
+      friendly:   { id:'English_radiant_girl',        speed:0.93, vol:1.0, pitch:0,  emotion:'happy'   },
     }
   },
   providers:{
