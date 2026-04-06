@@ -1,35 +1,33 @@
 // api/minimax.js
 export default async function handler(req, res) {
-  // 1. 设置 CORS 头（允许前端调用）
-  res.setHeader('Access-Control-Allow-Credentials', true);
+  // 设置 CORS 头
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // 2. 处理预检请求 (OPTIONS)
+  // 处理预检请求
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
-  // 3. 仅允许 POST 请求
+  // 只允许 POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // 4. 从环境变量中获取 MiniMax API Key（安全！）
+  // 从环境变量获取 API Key
   const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY;
   if (!MINIMAX_API_KEY) {
-    return res.status(500).json({ error: 'MiniMax API Key is not configured on server.' });
+    console.error('MINIMAX_API_KEY is not set');
+    return res.status(500).json({ error: 'Server configuration error: missing API key' });
   }
 
-  // 5. 获取前端发来的请求体
+  // 获取请求体
   const requestBody = req.body;
+  if (!requestBody || !requestBody.text) {
+    return res.status(400).json({ error: 'Missing text in request body' });
+  }
 
-  // 6. 向真实的 MiniMax API 发起请求
   try {
     const response = await fetch('https://api.minimax.io/v1/t2a_v2', {
       method: 'POST',
@@ -42,7 +40,13 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
-    // 7. 将 MiniMax API 的响应原样返回给前端
+    // 检查 MiniMax 返回的状态
+    if (data?.base_resp?.status_code !== 0) {
+      console.error('MiniMax API error:', data?.base_resp?.status_msg);
+      return res.status(400).json({ error: data?.base_resp?.status_msg || 'MiniMax error' });
+    }
+
+    // 返回音频数据
     res.status(200).json(data);
   } catch (error) {
     console.error('Proxy error:', error);
