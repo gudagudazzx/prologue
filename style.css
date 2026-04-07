@@ -903,10 +903,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 .fi,.fta{
   font-size:max(16px, 1em);
 }
-
-/* ════════════════════════════════════════════
-   ERROR PRACTICE SCREEN (优化表达练习)
-════════════════════════════════════════════ */
+/* 新增 error practice 屏幕样式（替换原有 .ep-* 相关样式） */
 #errorPracticeScreen {
   background: var(--paper);
 }
@@ -948,45 +945,75 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   font-size: 14px;
   color: var(--ink-dim);
 }
-.ep-card {
+
+/* 上半部分：左右两列布局 */
+.ep-top-row {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 24px;
   background: var(--paper2);
-  border: 2px solid var(--ink);
+  border: 1px solid var(--ink-faint);
   border-radius: 3px;
-  padding: 20px;
-  margin-bottom: 20px;
-  box-shadow: 3px 3px 0 var(--ink-faint);
+  padding: 16px;
 }
-.ep-error-original {
+.ep-left-col {
+  flex: 1;
+}
+.ep-right-col {
+  flex: 1;
+  border-left: 1px dashed var(--ink-faint);
+  padding-left: 16px;
+}
+.ep-error-original, .ep-correction, .ep-tip {
+  margin-bottom: 12px;
+}
+.ep-error-original .ep-label, .ep-correction .ep-label, .ep-tip .ep-label {
+  font-family: var(--font-h);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: var(--ink-dim);
+  display: block;
+  margin-bottom: 4px;
+}
+.ep-error-original .ep-content {
   font-family: var(--font-b);
-  font-size: 18px;
+  font-size: 15px;
   color: var(--red);
   background: var(--red-dim);
-  padding: 10px 14px;
+  padding: 6px 10px;
   border-radius: 3px;
-  margin-bottom: 14px;
-  border-left: 5px solid var(--red);
+  display: inline-block;
 }
-.ep-correction {
+.ep-correction .ep-content {
   font-family: var(--font-b);
-  font-size: 18px;
+  font-size: 15px;
   color: var(--green);
   background: var(--green-dim);
-  padding: 10px 14px;
+  padding: 6px 10px;
   border-radius: 3px;
-  margin-bottom: 14px;
-  border-left: 5px solid var(--green);
+  display: inline-block;
+  font-weight: bold;
 }
-.ep-tip {
+.ep-tip .ep-content {
   font-family: var(--font-n);
-  font-size: 15px;
+  font-size: 16px;
   color: var(--ink-mid);
-  background: var(--amber-dim);
-  padding: 8px 12px;
+  line-height: 1.5;
+  display: block;
+}
+
+/* 题目区域 */
+.ep-task-area {
+  margin: 12px 0 20px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
   border-radius: 3px;
+  padding: 18px;
+  box-shadow: 3px 3px 0 var(--ink-faint);
 }
 .ep-prompt {
   font-family: var(--font-n);
-  font-size: 18px;
+  font-size: 16px;
   color: var(--ink);
   margin-bottom: 12px;
   font-weight: 600;
@@ -998,9 +1025,30 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   border: 1.5px dashed var(--ink);
   padding: 16px;
   border-radius: 3px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   color: var(--blue);
+  font-weight: 500;
 }
+.ep-feedback {
+  font-family: var(--font-n);
+  font-size: 15px;
+  padding: 12px;
+  border-radius: 3px;
+  background: var(--amber-dim);
+  color: var(--amber);
+  border-left: 4px solid var(--amber);
+}
+.ep-feedback.correct {
+  background: var(--green-dim);
+  color: var(--green);
+  border-left-color: var(--green);
+}
+.ep-feedback.wrong {
+  background: var(--red-dim);
+  color: var(--red);
+  border-left-color: var(--red);
+}
+
 .ep-answer-area {
   margin-top: auto;
 }
@@ -1023,13 +1071,14 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   white-space: pre-wrap;
 }
 
+/* 右侧 Mentor */
 .ep-right {
   flex: 1;
   display: flex;
   flex-direction: column;
   background: var(--paper2);
   position: relative;
-  min-width: 260px;
+  min-width: 280px;
   border-left: 2px solid var(--ink);
 }
 .ep-mentor {
@@ -1042,11 +1091,12 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   text-align: center;
 }
 .ep-mentor-img {
-  max-width: 180px;
+  max-width: 220px;
   width: 80%;
   height: auto;
   margin-bottom: 16px;
   filter: drop-shadow(2px 4px 6px rgba(0,0,0,0.1));
+  transition: transform 0.2s;
 }
 .ep-mentor-bubble {
   background: var(--paper);
@@ -1108,11 +1158,8 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 .ep-done-btn {
   background: var(--green);
 }
-.ep-next-btn:hover, .ep-harder-btn:hover, .ep-done-btn:hover {
-  transform: translate(-1px, -1px);
-  box-shadow: 2px 2px 0 var(--ink-mid);
-}
 
+/* 响应式 */
 @media (max-width: 700px) {
   .ep-wrap {
     flex-direction: column;
@@ -1127,16 +1174,18 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
     min-height: 320px;
   }
   .ep-mentor-img {
-    max-width: 100px;
+    max-width: 120px;
   }
-}
-#scriptToggleBtn {
-  cursor: pointer;
-  user-select: none;
-}
-#scriptToggleBtn.off {
-  opacity: 0.5;
-  background: var(--ink-faint);
+  .ep-top-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .ep-right-col {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px dashed var(--ink-faint);
+    padding-top: 12px;
+  }
 }
 
 /* 个人题库屏 (预留) */
