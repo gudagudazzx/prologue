@@ -1199,3 +1199,32 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   width: 100%;
   padding: 30px;
 }
+/* 提高练习模块字体可读性 */
+.ep-tip .ep-content {
+  font-family: var(--font-b);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.ep-feedback {
+  font-family: var(--font-b);
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 12px;
+}
+.ep-feedback.correct {
+  background: var(--green-dim);
+  color: var(--green);
+  border-left: 4px solid var(--green);
+}
+.ep-feedback.wrong {
+  background: var(--red-dim);
+  color: var(--red);
+  border-left: 4px solid var(--red);
+}
+.ep-correction .ep-content {
+  font-size: 16px;
+}
+.ep-correction div[style*="margin-top"] {
+  font-size: 14px;
+}
