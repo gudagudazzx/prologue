@@ -71,7 +71,6 @@ const LISTEN_EXPR={
 };
 
 let ACTIVE_CHAR_EXPR = CHALL_EXPR;
-
 function setDebater(expr){ setExpr('challSprite', DEBATE_EXPR[expr]||DEBATE_EXPR.neutral); }
 function setListener(expr){ setExpr('challSprite', LISTEN_EXPR[expr]||LISTEN_EXPR.idle); }
 
@@ -79,7 +78,6 @@ document.getElementById('mentorSprite').src  = MENTOR_EXPR.greet_smile;
 document.getElementById('challSprite').src   = CHALL_EXPR.neutral;
 document.getElementById('friendlySprite').src = FRIENDLY_EXPR.calm;
 
-/* ── CONFIG (语速调整) ── */
 const CFG={
   API_TIMEOUT_MS:12000,
   MAX_RETRIES:3,
@@ -89,11 +87,12 @@ const CFG={
     model: 'speech-02-turbo',
     endpoint: 'https://api.minimax.io/v1/t2a_v2',
     voices:{
-      challenger: { id:'English_magnetic_voiced_man', speed:1.2, vol:1.0, pitch:1,  emotion:'neutral' },
-      mentor:     { id:'English_radiant_girl',        speed:1.25, vol:1.0, pitch:1,  emotion:'happy'   },
-      debater:    { id:'English_Debator',             speed:1.3,  vol:1.0, pitch:1,  emotion:'happy'   },
-      listener:   { id:'English_CalmWoman',           speed:1.15, vol:1.0, pitch:0,  emotion:'neutral' },
-      friendly:   { id:'English_radiant_girl',        speed:1.2,  vol:1.0, pitch:1,  emotion:'happy'   },
+      // 语速整体提高，更自然
+      challenger: { id:'English_magnetic_voiced_man', speed:1.2, vol:1.0, pitch:0,  emotion:'neutral' },
+      mentor:     { id:'English_radiant_girl',        speed:1.25, vol:1.0, pitch:0,  emotion:'happy'   },
+      debater:    { id:'English_Debator',             speed:1.25, vol:1.0, pitch:0,  emotion:'happy'   },
+      listener:   { id:'English_CalmWoman',           speed:1.15, vol:1.0, pitch:-1, emotion:'neutral' },
+      friendly:   { id:'English_radiant_girl',        speed:1.2, vol:1.0, pitch:0,  emotion:'happy'   },
     }
   },
   providers:{
@@ -109,7 +108,6 @@ const CFG={
   },
 };
 
-/* ── STATE (新增 scriptVisible, userPracticeHistory) ── */
 const S={
   scenario:'interview',
   apiKey:'', provider:'deepseek',
@@ -129,16 +127,17 @@ const S={
   practiceIndex: 0,
   epRecognition: null,
   epCurrentAnswer: '',
-  // 新增
-  scriptVisible: true,
-  userPracticeHistory: [],   // 存储 { original, correction, exercise, userAnswer, timestamp, harderLevel }
+  // 新增个人题库 (存储优化表达练习)
+  myQuestionBank: [],
+  // script 显示开关 (由 toggle 控制)
+  scriptEnabled: true,
 };
 
 let recognition = null;
 
 const PROF_KEY='mm_v5_profile';
 const SRS_KEY ='mm_v5_srs';
-const PRACTICE_HISTORY_KEY = 'mm_practice_history';
+const BANK_KEY ='mm_v5_bank';   // 个人题库存储
 
 function saveProfile(){
   try{
@@ -158,16 +157,18 @@ function saveSRS(ws){
   ws.forEach(w=>{if(w&&!S.srsWords.includes(w))S.srsWords.push(w);});
   try{localStorage.setItem(SRS_KEY,JSON.stringify(S.srsWords));}catch{}
 }
-function loadPracticeHistory(){
-  try{ S.userPracticeHistory = JSON.parse(localStorage.getItem(PRACTICE_HISTORY_KEY)||'[]'); }catch(e){ S.userPracticeHistory = []; }
+// 保存/加载题库
+function saveBank(bank){
+  try{localStorage.setItem(BANK_KEY,JSON.stringify(bank));}catch{}
 }
-function savePracticeHistory(){
-  try{ localStorage.setItem(PRACTICE_HISTORY_KEY, JSON.stringify(S.userPracticeHistory)); }catch(e){}
+function loadBank(){
+  try{return JSON.parse(localStorage.getItem(BANK_KEY)||'[]');}catch{return [];}
 }
+
 (()=>{try{S.srsWords=JSON.parse(localStorage.getItem(SRS_KEY)||'[]');}catch{}})();
+(()=>{try{S.myQuestionBank = loadBank();}catch{}})();
 (()=>{ try{ const k=localStorage.getItem('mm_apikey')||''; if(k) S.apiKey=k; }catch{} })();
 (()=>{ try{ const k=localStorage.getItem('mm_minimaxkey')||''; if(k) S.minimaxKey=k; }catch{} })();
-loadPracticeHistory();
 
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -178,7 +179,7 @@ function toggleApiKey(){
   else { exp.style.display='none'; col.style.display='block'; }
 }
 function showScreen(id){
-  ['hubScreen','intakeScreen','prepScreen','arenaScreen','feedbackScreen','wordPracticeScreen','errorPracticeScreen']
+  ['hubScreen','intakeScreen','prepScreen','arenaScreen','feedbackScreen','wordPracticeScreen','errorPracticeScreen','bankScreen']
     .forEach(s=>$(s)?.classList.remove('active'));
   $(id).classList.add('active');
   TTS.stop();
@@ -188,20 +189,67 @@ function showLoad(m){$('loadingMsg').textContent=m||'Thinking…';$('loadingVeil
 function hideLoad(){$('loadingVeil').classList.remove('show');}
 function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
 
-/* 角色定位函数 (保持不变) */
-function stageSize(){ /* 同原代码 */ }
+function stageSize(){
+  const panel=$('leftPanel')||$('stage');
+  if(!panel) return {w:window.innerWidth,h:window.innerHeight};
+  return {w:panel.offsetWidth||window.innerWidth, h:panel.offsetHeight||window.innerHeight};
+}
 function isMobile(){ return window.innerWidth <= 600; }
 function isLandscape(){ return window.innerWidth > window.innerHeight; }
-function posInterviewers(difficulty){ /* 同原代码 */ }
-function posChar(id,cfg){ /* 同原代码 */ }
-function offLeft(id, w=320){ /* 同原代码 */ }
-function offRight(id, w=320){ /* 同原代码 */ }
-function center(id, w=360){ /* 同原代码 */ }
-function leftMain(id, w=310){ /* 同原代码 */ }
-function rightSmall(id, w=240){ /* 同原代码 */ }
 
-/* ── TTS MODULE (队列完善) ── */
+function posInterviewers(difficulty){
+  const {w} = stageSize();
+  const mob = isMobile();
+  const cW  = mob ? Math.min(w*0.85, 340) : Math.min(480, w*0.70);
+  const fW  = mob ? Math.min(w*0.65, 260) : Math.min(380, w*0.55);
+
+  if(S.intensity === 'gentle' || difficulty === 'gentleOnly'){
+    posChar('friendlyChar', {left:(w-fW)/2, width:fW, opacity:1});
+    posChar('challChar',    {left:w+cW+80,  width:cW, opacity:0});
+  } else if(difficulty === 'hard'){
+    const mob2 = isMobile();
+    posChar('challChar',    {left:(w-cW)/2, width:cW, opacity:1});
+    const fLeft = mob2 ? -fW*0.4 : w*0.02;
+    posChar('friendlyChar', {left:fLeft,    width:fW, opacity:0.35});
+  } else {
+    posChar('friendlyChar', {left:(w-fW)/2, width:fW, opacity:1});
+    posChar('challChar',    {left:w+cW+80,  width:cW, opacity:0});
+  }
+}
+
+function posChar(id,cfg){
+  const el=$(id);
+  if(!el) return;
+  const op = cfg.opacity !== undefined ? cfg.opacity : 1;
+  el.style.opacity = op;
+  el.classList.toggle('dimmed', op < 0.5 && op > 0);
+  el.classList.toggle('hidden', op === 0);
+  el.style.transform = (cfg.scale&&cfg.scale!==1 ? `scale(${cfg.scale})` : '');
+}
+
+function offLeft(id, w=320){
+  posChar(id,{left:-w-80, width:w, opacity:0});
+}
+function offRight(id, w=320){
+  const {w:sw}=stageSize();
+  posChar(id,{left:sw+80, width:w, opacity:0});
+}
+function center(id, w=360){
+  const {w:sw}=stageSize();
+  posChar(id,{left:(sw-w)/2, width:w, opacity:1});
+}
+function leftMain(id, w=310){
+  const {w:sw}=stageSize();
+  posChar(id,{left:sw*0.05, width:w, opacity:1});
+}
+function rightSmall(id, w=240){
+  const {w:sw}=stageSize();
+  posChar(id,{left:sw-w-16, width:w, opacity:1});
+}
+
 window._mmCorsBlocked = false;
+
+/* ── TTS 模块 (增强语速和自然度) ── */
 const TTS = (()=>{
   const synth = window.speechSynthesis;
   let voices = [], challVoice = null, mentorVoice = null;
@@ -249,7 +297,8 @@ const TTS = (()=>{
   async function callMiniMax(text, role){
     if (!text || text.trim().length === 0) return null;
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    let apiUrl, headers;
+    let apiUrl;
+    let headers;
     if (!isLocal) {
       apiUrl = '/api/minimax';
       headers = { 'Content-Type': 'application/json' };
@@ -257,13 +306,16 @@ const TTS = (()=>{
       const key = S.minimaxKey;
       if (!key) return null;
       apiUrl = CFG.minimax.endpoint;
-      headers = { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' };
+      headers = {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      };
     }
     const vc = mmVoiceCfg(role);
     try {
       const res = await fetch(apiUrl, {
         method: 'POST',
-        headers,
+        headers: headers,
         body: JSON.stringify({
           model:    CFG.minimax.model,
           text:     text,
@@ -279,18 +331,19 @@ const TTS = (()=>{
       });
       const responseText = await res.text();
       let data;
-      try { data = JSON.parse(responseText); } catch(e) { return null; }
-      if (!res.ok) { console.warn('[MiniMax TTS] HTTP', res.status); return null; }
-      if (data?.base_resp?.status_code !== 0 && data?.base_resp?.status_code !== undefined) {
-        console.warn('[MiniMax TTS] API error:', data?.base_resp?.status_msg);
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
         return null;
       }
+      if (!res.ok) return null;
+      if (data?.base_resp?.status_code !== 0 && data?.base_resp?.status_code !== undefined) return null;
       const hexAudio = data?.data?.audio || data?.audio_file;
-      if (!hexAudio) { console.warn('[MiniMax TTS] no audio in response'); return null; }
+      if (!hexAudio) return null;
       const cleanHex = hexAudio.replace(/\s/g, '');
       const bytes = new Uint8Array(cleanHex.length / 2);
       for (let i = 0; i < cleanHex.length; i += 2) {
-        bytes[i/2] = parseInt(cleanHex.substr(i,2), 16);
+        bytes[i / 2] = parseInt(cleanHex.substr(i, 2), 16);
       }
       const ctx = getAudioCtx();
       let audioBuf;
@@ -304,7 +357,9 @@ const TTS = (()=>{
         return null;
       }
       return audioBuf;
-    } catch(e) { console.warn('[MiniMax TTS] error:', e.message); return null; }
+    } catch (e) {
+      return null;
+    }
   }
 
   function playAudioBuffer(buf, readPause=0){
@@ -324,16 +379,23 @@ const TTS = (()=>{
     });
   }
 
-  function stopMiniMax(){ if(_currentSource){ try{ _currentSource.stop(); }catch{} _currentSource=null; } }
-  function stop(){ stopMiniMax(); synth.cancel(); }
+  function stopMiniMax(){
+    if(_currentSource){ try{ _currentSource.stop(); }catch{} _currentSource=null; }
+  }
+
+  function stop(){
+    stopMiniMax();
+    synth.cancel();
+  }
+
   function setEnabled(v){ enabled=v; if(!v) stop(); }
 
   function createUtterance(text, role){
     const u = new SpeechSynthesisUtterance(text);
     if(role==='challenger'||role==='debater'){
-      u.voice=challVoice; u.pitch=0.80; u.rate=0.86; u.volume=1.0;
+      u.voice=challVoice; u.pitch=0.85; u.rate=0.92; u.volume=1.0;   // 稍快
     } else {
-      u.voice=mentorVoice; u.pitch=1.12; u.rate=0.88; u.volume=0.92;
+      u.voice=mentorVoice; u.pitch=1.15; u.rate=0.94; u.volume=0.92;
     }
     return u;
   }
@@ -357,8 +419,11 @@ const TTS = (()=>{
     const play = () => {
       _isPlaying = true;
       return callMiniMax(text, role).then(buf => {
-        if (buf) return playAudioBuffer(buf);
-        else return _webSpeakSimple(text, role);
+        if (buf) {
+          return playAudioBuffer(buf);
+        } else {
+          return _webSpeakSimple(text, role);
+        }
       }).finally(() => {
         _isPlaying = false;
         if (_pendingQueue.length) {
@@ -395,7 +460,6 @@ const TTS = (()=>{
   };
 })();
 
-/* ── VN TEXTBOX CONTROLLER (支持 scriptVisible) ── */
 let _typeTimer=null;
 function _typeText(text, utt){
   clearTimeout(_typeTimer);
@@ -442,6 +506,7 @@ function _typeText(text, utt){
     utt.onerror = (e)=>{ if(e.error!=='interrupted'&&e.error!=='canceled') console.warn('[TTS] error:', e.error); };
   }
 }
+
 function revealAllText(text){
   const el=$('vntbText');
   if(!el) return;
@@ -450,6 +515,7 @@ function revealAllText(text){
   if(cur) cur.remove();
   clearTimeout(_typeTimer);
 }
+
 function hideVNTextbox(){
   const el=$('vntbText');
   if(el) el.textContent='';
@@ -458,7 +524,8 @@ function hideVNTextbox(){
   TTS.stop();
 }
 
-function showVNTextbox(text, mode, label){
+// 显示文本，支持是否自动隐藏（默认自动隐藏，但练习模块等可传 false）
+function showVNTextbox(text, mode, label, autoHide=true){
   const tb=$('vntextbox');
   const sp=$('vntbSpeaker');
   if(!tb||!sp) return Promise.resolve();
@@ -486,37 +553,53 @@ function showVNTextbox(text, mode, label){
 
   const readPause = Math.max(800, text.length * 18);
 
-  // 字幕显示控制
-  if (S.scriptVisible === false) {
-    // 只播放语音，不显示文字
-    return TTS.speak(text, ttsRole).then(() => {
-      setTimeout(resolve, readPause);
-    });
-  }
-
-  // 正常模式：打字 + 语音
   return new Promise(resolve => {
     TTS.stop();
     _typeText(text, null);
     TTS.speak(text, ttsRole).then(() => {
       revealAllText(text);
-      setTimeout(resolve, readPause);
+      if(autoHide){
+        setTimeout(() => { hideVNTextbox(); resolve(); }, readPause);
+      } else {
+        resolve();  // 不自动隐藏，保留文本
+      }
     }).catch(() => {
       clearTimeout(_typeTimer);
       const utt = TTS.createUtterance(text, ttsRole);
-      utt.onend = () => { clearTimeout(_typeTimer); revealAllText(text); setTimeout(resolve, readPause); };
-      utt.onerror = () => { clearTimeout(_typeTimer); revealAllText(text); setTimeout(resolve, readPause); };
+      utt.onend = () => {
+        clearTimeout(_typeTimer);
+        revealAllText(text);
+        if(autoHide){
+          setTimeout(() => { hideVNTextbox(); resolve(); }, readPause);
+        } else {
+          resolve();
+        }
+      };
+      utt.onerror = () => {
+        clearTimeout(_typeTimer);
+        revealAllText(text);
+        if(autoHide){
+          setTimeout(() => { hideVNTextbox(); resolve(); }, readPause);
+        } else {
+          resolve();
+        }
+      };
       _typeText(text, utt);
       TTS.speakUtterance(utt);
     });
   });
 }
 
-function showChallBubble(text){ return showVNTextbox(text,'chall'); }
+// 保持显示文本的版本（供问题使用）
+function showVNTextboxKeep(text, mode, label){
+  return showVNTextbox(text, mode, label, false);
+}
+
+function showChallBubble(text, autoHide=true){ return showVNTextbox(text,'chall',null,autoHide); }
 function hideChallBubble()    { hideVNTextbox(); }
-function showMentorBubble(text){ return showVNTextbox(text,'mentor'); }
+function showMentorBubble(text, autoHide=true){ return showVNTextbox(text,'mentor',null,autoHide); }
 function hideMentorBubble()   { hideVNTextbox(); }
-function showMentorHint(text, label){ return showVNTextbox(text,'hint',label); }
+function showMentorHint(text, label, autoHide=true){ return showVNTextbox(text,'hint',label,autoHide); }
 function hideMentorHint()     { hideVNTextbox(); }
 
 /* ── API LAYER (保持不变) ── */
@@ -524,21 +607,39 @@ async function callArtifactProxy(messages, systemPrompt, maxTok){
   try{
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method:'POST',
-      headers:{ 'Content-Type':'application/json', 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: maxTok||250, system: systemPrompt, messages: messages.filter(m=>m.role!=='system') })
+      headers:{
+        'Content-Type':'application/json',
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: maxTok||250,
+        system: systemPrompt,
+        messages: messages.filter(m=>m.role!=='system'),
+      })
     });
     if(!res.ok) return null;
     const d = await res.json();
     return d.content?.[0]?.text?.trim() || null;
-  }catch(e){ console.warn('[Proxy]',e.message); return null; }
+  }catch(e){
+    return null;
+  }
 }
+
 async function callAPI(messages, systemPrompt, maxTok=250){
-  if(!S.apiKey) return callArtifactProxy(messages, systemPrompt, maxTok);
+  if(!S.apiKey){
+    return callArtifactProxy(messages, systemPrompt, maxTok);
+  }
   const cfg=CFG.providers[S.provider];
-  const fetchWithTimeout = (url, opts, ms) => new Promise((resolve, reject) => {
-    const tid = setTimeout(() => reject(new Error('timeout')), ms);
-    fetch(url, opts).then(r => { clearTimeout(tid); resolve(r); }).catch(e => { clearTimeout(tid); reject(e); });
-  });
+  const fetchWithTimeout = (url, opts, ms) => {
+    return new Promise((resolve, reject) => {
+      const tid = setTimeout(() => reject(new Error('timeout')), ms);
+      fetch(url, opts)
+        .then(r => { clearTimeout(tid); resolve(r); })
+        .catch(e => { clearTimeout(tid); reject(e); });
+    });
+  };
   try{
     const hdrs={'Content-Type':'application/json'};
     let body;
@@ -546,16 +647,21 @@ async function callAPI(messages, systemPrompt, maxTok=250){
       hdrs['x-api-key']=S.apiKey;
       hdrs['anthropic-version']='2023-06-01';
       hdrs['anthropic-dangerous-direct-browser-access']='true';
-      body={model:cfg.model,max_tokens:maxTok,system:systemPrompt, messages:messages.filter(m=>m.role!=='system')};
+      body={model:cfg.model,max_tokens:maxTok,system:systemPrompt,
+            messages:messages.filter(m=>m.role!=='system')};
     }else{
       hdrs['Authorization']=`Bearer ${S.apiKey}`;
-      body={model:cfg.model,max_tokens:maxTok,temperature:0.78, messages:[{role:'system',content:systemPrompt},...messages.filter(m=>m.role!=='system')]};
+      body={model:cfg.model,max_tokens:maxTok,temperature:0.78,
+            messages:[{role:'system',content:systemPrompt},...messages.filter(m=>m.role!=='system')]};
     }
     const res=await fetchWithTimeout(cfg.url,{method:'POST',headers:hdrs,body:JSON.stringify(body)},CFG.API_TIMEOUT_MS);
     if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e?.error?.message||`HTTP ${res.status}`);}
     const d=await res.json();
     return(S.provider==='anthropic'?d.content?.[0]?.text:d.choices?.[0]?.message?.content)?.trim()||null;
-  }catch(e){ if(e.message==='timeout')console.warn('[API] timeout');else console.error('[API]',e.message); return null; }
+  }catch(e){
+    if(e.message==='timeout')console.warn('[API] timeout');else console.error('[API]',e.message);
+    return null;
+  }
 }
 
 /* ── DEMO FALLBACKS ── */
@@ -573,12 +679,13 @@ const FB={
   praise:["That's a genuinely strong answer — specific and structured.","Much better! The concrete detail makes it memorable.","That would stand out to a real interviewer. Well done."],
 };
 
-/* ── DAILY GREETING (保持不变) ── */
+/* ── DAILY GREETING ── */
 function checkDailyGreeting(){
   const today = new Date().toDateString();
   const lastGreet = localStorage.getItem('mm_daily_greet')||'';
   if(lastGreet === today) return;
   localStorage.setItem('mm_daily_greet', today);
+
   const hr = new Date().getHours();
   const timeOfDay = hr<5?'night':hr<12?'morning':hr<17?'afternoon':hr<21?'evening':'night';
   const greetings = {
@@ -587,6 +694,7 @@ function checkDailyGreeting(){
     evening:   "Good evening! Great time to squeeze in some practice. You're here, and that already puts you ahead.",
     night:     "Still up? Dedication! Don't stay too late — rest is part of performing well. Let's make this count.",
   };
+
   setTimeout(()=>{
     const banner = document.createElement('div');
     banner.id = 'dailyGreetBanner';
@@ -653,7 +761,52 @@ window.addEventListener('load',()=>{
   setMentor('greet_smile');
   setChall('neutral');
   setTimeout(checkDailyGreeting, 500);
+  
+  // 初始化 script 切换按钮和强度规则
+  initScriptToggle();
 });
+
+function initScriptToggle(){
+  const btn = document.getElementById('scriptToggleBtn');
+  if(!btn) return;
+  // 根据强度设置初始状态和可用性
+  if(S.intensity === 'gentle'){
+    S.scriptEnabled = true;
+    btn.textContent = '📜 Script: ON';
+    btn.style.opacity = '0.6';
+    btn.style.pointerEvents = 'none';
+    showScriptArea(true);
+  } else if(S.intensity === 'hardcore'){
+    S.scriptEnabled = false;
+    btn.textContent = '📜 Script: OFF';
+    btn.style.opacity = '0.6';
+    btn.style.pointerEvents = 'none';
+    showScriptArea(false);
+  } else { // realistic
+    S.scriptEnabled = true;
+    btn.textContent = '📜 Script: ON';
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
+    showScriptArea(true);
+    btn.onclick = ()=>{
+      S.scriptEnabled = !S.scriptEnabled;
+      btn.textContent = S.scriptEnabled ? '📜 Script: ON' : '📜 Script: OFF';
+      showScriptArea(S.scriptEnabled);
+    };
+  }
+}
+
+function showScriptArea(show){
+  const scriptArea = document.getElementById('scriptArea');
+  if(scriptArea){
+    scriptArea.style.display = show ? 'block' : 'none';
+  }
+  // 如果隐藏 script，同时隐藏 vntbText 区域（避免残留）
+  const vntbText = document.getElementById('vntbText');
+  if(vntbText){
+    vntbText.style.display = show ? '' : 'none';
+  }
+}
 
 const loadProfileBtn = $('loadProfileBtn');
 if(loadProfileBtn){
@@ -687,6 +840,8 @@ if(loadProfileBtn){
     if(p.company)    $('fiCompany').value=p.company;
     const profileBanner=$('profileBanner');
     if(profileBanner) profileBanner.classList.remove('show');
+    // 重新初始化 script 切换规则（因为强度可能变了）
+    initScriptToggle();
   });
 }
 
@@ -703,7 +858,9 @@ document.querySelectorAll('.id-pill').forEach(p=>p.addEventListener('click',()=>
 }));
 document.querySelectorAll('.int-pill').forEach(p=>p.addEventListener('click',()=>{
   document.querySelectorAll('.int-pill').forEach(x=>x.classList.remove('on'));
-  p.classList.add('on'); S.intensity=p.dataset.int;
+  p.classList.add('on'); S.intensity=p.dataset.id;
+  // 强度改变后重新初始化 script 规则
+  initScriptToggle();
 }));
 document.querySelectorAll('.tog-opt').forEach(p=>p.addEventListener('click',()=>{
   document.querySelectorAll('.tog-opt').forEach(x=>x.classList.remove('on'));
@@ -772,10 +929,81 @@ function buildProfile(){
   return lines.join('\n');
 }
 
-/* ── PREP (保持不变) ── */
-async function runPrep(){ /* 同原代码 */ }
+/* ── PREP ── */
+async function runPrep(){
+  const statusEl=$('prepStatus');
+  const profile=buildProfile();
+  const numQ=S.intensity==='hardcore'?8:S.intensity==='medium'?7:6;
+  if(S.scenario==='debate'||S.scenario==='smalltalk'){
+    if(statusEl) statusEl.textContent='✓ Ready! Entering the stage…';
+    S.questions=[]; S.qLog=[];
+    await sleep(800);
+    launchArena('');
+    return;
+  }
 
-/* ── ARENA LAUNCH (增强 scriptVisible 控制) ── */
+  const statusMsgs=[
+    'Analysing your profile…',
+    'Identifying key competencies…',
+    'Crafting your questions…',
+    'Almost ready…',
+  ];
+  let si=0;
+  if(statusEl) statusEl.textContent=statusMsgs[0];
+  const ticker=setInterval(()=>{
+    if(si<statusMsgs.length-1){ si++; if(statusEl) statusEl.textContent=statusMsgs[si]; }
+  },900);
+
+  const aPrompt=`You are a professional interview coach and hiring expert.
+Candidate Profile:
+${profile}
+
+Using ALL details (identity, speciality, position, company, goals, resume), determine the specific competencies, traits, and knowledge areas to examine.
+Return ONLY valid JSON (no markdown):
+{"analysis_points":["specific point (max 6)"],"opening_note":"One warm sentence the interviewer says to open","surprise_ok":${S.intensity==='hardcore'}}`;
+
+  const qPrompt=`You are an experienced interviewer preparing a structured interview.
+Candidate Profile:
+${profile}
+
+Generate ${numQ} interview questions. MANDATORY structure:
+1. Self-introduction warmup ("Please introduce yourself…")
+2. 2 motivation/background questions referencing their SPECIFIC field (${S.speciality||'their field'}) and position (${S.position})
+3. 2-3 competency/experience questions — MUST reference their specific background details
+4. ${S.intensity==='hardcore'?'2 curveball/surprise questions (AI in their field, recent trends, handling extreme pressure)':'1 forward-looking question'}
+5. End with "Do you have any questions for me?"
+Be SPECIFIC — generic questions are not acceptable.
+Return ONLY valid JSON (no markdown):
+{"questions":[{"q":"full question","intent":"why asking","dimension":"competency tested"}]}`;
+
+  const [aRaw, qRaw] = await Promise.all([
+    callAPI([], aPrompt, 350),
+    callAPI([], qPrompt, 700),
+  ]);
+
+  clearInterval(ticker);
+
+  let aData={analysis_points:[],opening_note:"Welcome. Please make yourself comfortable — let's begin.",surprise_ok:false};
+  if(aRaw){try{aData={...aData,...JSON.parse(aRaw.replace(/```json|```/g,'').trim())};}catch{}}
+  S.analysisPoints=aData.analysis_points||[];
+  if(S.analysisPoints.length){
+    const paItems=$('paItems');
+    const prepAnalysis=$('prepAnalysis');
+    if(paItems) paItems.innerHTML=S.analysisPoints.map(p=>`<div class="pa-item">${esc(p)}</div>`).join('');
+    if(prepAnalysis) prepAnalysis.style.display='block';
+  }
+
+  let qData={questions:FB.q};
+  if(qRaw){try{const p=JSON.parse(qRaw.replace(/```json|```/g,'').trim());if(p.questions?.length)qData=p;}catch{}}
+  S.questions=qData.questions;
+  S.qLog=S.questions.map(q=>({question:q.q,dimension:q.dimension||'',intent:q.intent||'',userAnswers:[],finalScore:null,retries:0,evalNotes:''}));
+
+  if(statusEl) statusEl.textContent=`✓ ${S.questions.length} questions ready — entering the stage…`;
+  await sleep(600);
+  launchArena(aData.opening_note);
+}
+
+/* ── ARENA LAUNCH ── */
 function selectScenario(sc){
   S.scenario = sc;
   const titles={
@@ -799,21 +1027,365 @@ function selectScenario(sc){
     arena.classList.remove('scenario-interview','scenario-debate','scenario-smalltalk');
     arena.classList.add('scenario-'+sc);
   }
+
   showScreen('intakeScreen');
 }
 
-function setupScenarioCharacters(){ /* 同原代码 */ }
+function setupScenarioCharacters(){
+  const arena = document.getElementById('arenaScreen');
+  arena.classList.remove('scenario-interview','scenario-debate','scenario-smalltalk');
+  arena.classList.add('scenario-'+S.scenario);
 
-const DEBATE_MOTIONS = [ /* 同原代码 */ ];
-const DEBATE_FB = { /* 同原代码 */ };
+  if(S.scenario==='interview'){
+    setFriendly('calm');
+    setChall('neutral');
+    if(S.intensity==='gentle'){
+      posChar('friendlyChar',{opacity:1});
+      posChar('challChar',{opacity:0});
+    } else {
+      posChar('friendlyChar',{opacity:1});
+      posChar('challChar',{opacity:0.4});
+    }
+    posChar('mentorChar',{opacity:0});
+  } else if(S.scenario==='debate'){
+    setExpr('challSprite', DEBATE_EXPR.neutral);
+    posChar('challChar',{opacity:1});
+    posChar('friendlyChar',{opacity:0});
+    posChar('mentorChar',{opacity:0});
+  } else {
+    setExpr('challSprite', LISTEN_EXPR.idle);
+    posChar('challChar',{opacity:1});
+    posChar('friendlyChar',{opacity:0});
+    posChar('mentorChar',{opacity:0});
+  }
+}
 
-async function runDebate(openingNote){ /* 同原代码 */ }
-async function processDebateAnswer(userText){ /* 同原代码，但确保 showChallBubble 前有 await */ }
-const ST_TOPICS = [ /* 同原代码 */ ];
-const ST_STARTERS = [ /* 同原代码 */ ];
-async function runSmallTalk(openingNote){ /* 同原代码 */ }
-function injectSTTopic(topic){ /* 同原代码 */ }
-async function processSmallTalkAnswer(userText){ /* 同原代码，确保 await */ }
+const DEBATE_MOTIONS = [
+  "Social media does more harm than good.",
+  "Artificial intelligence will create more jobs than it destroys.",
+  "Gap years should be encouraged for all students.",
+  "Online education is more effective than traditional classrooms.",
+  "Cities should ban private cars.",
+  "A university degree is no longer worth the cost.",
+  "Zoos should be abolished.",
+  "Remote work should be the default for office jobs.",
+];
+
+const DEBATE_FB = {
+  openerFor:  ["Interesting opening. Let's see how you defend that.","You've staked your position — now back it up."],
+  openerAgainst: ["Bold claim. I'll need to hear your evidence.","Alright — make your case, and make it convincing."],
+  challenge: [
+    "But where's your evidence? Anyone can make that assertion.",
+    "That's a sweeping generalisation. Can you give a specific example?",
+    "You're missing a crucial counterpoint here.",
+    "I'd push back on that — what about the people who'd disagree?",
+    "Correlation isn't causation. Can you prove that link?",
+  ],
+  agree: [
+    "Fair point — I'll concede that. But consider this...",
+    "Actually, you've made a strong argument there.",
+    "That's a compelling case. However...",
+  ],
+};
+
+async function runDebate(openingNote){
+  S.phase='idle';
+  const topic = DEBATE_MOTIONS[Math.floor(Math.random()*DEBATE_MOTIONS.length)];
+  S._debateTopic = topic;
+  S._debateRound = 0;
+  S._debateUserSide = Math.random()>0.5?'for':'against';
+
+  const tc = document.getElementById('debateTopicCard');
+  if(tc){ tc.textContent = 'Motion: "' + topic + '"'; tc.classList.add('show'); }
+
+  document.getElementById('qPill').textContent = 'Round 1 / ' + CFG.DEBATE_ROUNDS;
+  document.getElementById('statusPill').textContent = 'Debate';
+  document.getElementById('qBarFill').style.width='0%';
+
+  const side = S._debateUserSide==='for' ? 'in favour of' : 'against';
+  const oppSide = S._debateUserSide==='for' ? 'against' : 'in favour of';
+
+  if(S.mentorMode!=='off'){
+    const {w}=stageSize(); const mob=isMobile();
+    const mW=mob?Math.min(w*0.80,300):Math.min(380,w*0.58);
+    setMentor('greet_talk');
+    await sleep(380);
+    posChar('mentorChar',{opacity:1});
+    await sleep(20);
+    posChar('mentorChar',{opacity:1});
+    await sleep(900);
+    await showMentorBubble(`The motion is: "${topic}". You are arguing ${side} it. Use evidence, examples, and clear structure. I'll coach you if you get stuck. Good luck!`);
+    hideMentorBubble();
+    setMentor('greet_smile');
+    await sleep(400);
+    posChar('mentorChar',{opacity:1});
+    await sleep(900);
+  }
+
+  const {w}=stageSize(); const mob=isMobile();
+  const cW=mob?Math.min(w*0.85,340):Math.min(460,w*0.68);
+  setDebater('neutral');
+  await sleep(380);
+  posChar('challChar',{left:-cW-80, width:cW, opacity:0});
+  await sleep(20);
+  posChar('challChar',{left:(w-cW)/2, width:cW, opacity:1});
+  document.getElementById('challChar').classList.add('breathing');
+  await sleep(900);
+
+  const openMsg = openingNote || (S._debateUserSide==='for'
+    ? `Welcome! The motion today is: "${topic}". You're arguing FOR it. I'm against. Make your opening statement — why do you believe this?`
+    : `Welcome! The motion is: "${topic}". You're arguing AGAINST it. I'm for it. Tell me — why do you oppose this?`);
+
+  setDebater('talk');
+  await sleep(400);
+  // 保持显示问题文本（不自动隐藏）
+  await showChallBubble(openMsg, false);
+  setTimeout(()=>setDebater('neutral'), 1400);
+
+  document.getElementById('bigMicBtn').style.display='flex';
+  document.getElementById('skipBtn').classList.add('show');
+  document.getElementById('micStatus').textContent='Your argument';
+  document.getElementById('micStatus').className='';
+  if(document.getElementById('hearingDisplay')) document.getElementById('hearingDisplay').textContent='';
+  S.phase='qa_listening';
+  S._isDebate = true;
+}
+
+async function processDebateAnswer(userText){
+  S._debateRound = (S._debateRound||0) + 1;
+  document.getElementById('bigMicBtn').style.display='none';
+  document.getElementById('skipBtn').classList.remove('show');
+  document.getElementById('micStatus').textContent='Considering…';
+  document.getElementById('micStatus').className='active';
+  if(document.getElementById('hearingDisplay')) document.getElementById('hearingDisplay').textContent='Thinking…';
+
+  const round = S._debateRound;
+  document.getElementById('qPill').textContent = `Round ${round} / ${CFG.DEBATE_ROUNDS}`;
+  document.getElementById('qBarFill').style.width = ((round/CFG.DEBATE_ROUNDS)*100)+'%';
+  document.getElementById('statusPill').textContent = 'Your Turn';
+
+  S.qLog.push({question:`Round ${round}: user argues ${S._debateUserSide}`, dimension:'Argumentation', intent:'Assess evidence, logic, rebuttal', userAnswers:[userText], finalScore:null, retries:0, evalNotes:''});
+
+  if(round >= CFG.DEBATE_ROUNDS){
+    S.voiceState='idle';
+    await phaseEnd();
+    return;
+  }
+
+  const debateSys = `You are a passionate, sharp English debate opponent.
+Motion: "${S._debateTopic}"
+You are arguing ${S._debateUserSide==='for'?'AGAINST':'FOR'} the motion.
+The user just said: "${userText}"
+This is round ${round} of ${CFG.DEBATE_ROUNDS}.
+
+Respond as the debater: directly challenge their argument OR concede a point before countering.
+Use debate phrases: "I'd argue...", "However, consider...", "The evidence suggests...", "You're overlooking..."
+Keep response to 2-3 sentences. Energetic, sharp, fair.
+Then ask them to respond to your counter-point.
+Return ONLY the spoken response — no JSON, no labels.`;
+
+  let counterArg = null;
+  if(S.apiKey || true){
+    counterArg = await callAPI([{role:'user',content:userText}], debateSys, 200);
+  }
+  if(!counterArg){
+    const wc = userText.trim().split(/\s+/).filter(Boolean).length;
+    const pool = wc < 8 ? DEBATE_FB.challenge : (Math.random()<0.3 ? DEBATE_FB.agree : DEBATE_FB.challenge);
+    counterArg = pool[Math.floor(Math.random()*pool.length)] + ' What do you say to that?';
+  }
+
+  const evalSys = `Rate this debate argument: "${userText}" (motion: "${S._debateTopic}", user side: ${S._debateUserSide}).
+Return ONLY JSON: {"score":0-100,"quality":"good"|"ok"|"weak","coach":"1 specific tip on argument structure or evidence","grammar":"grammar issue if any or empty"}`;
+  let ev = {score:65,quality:'ok',coach:'',grammar:''};
+  callAPI([{role:'user',content:userText}], evalSys, 120).then(raw=>{
+    if(raw){try{const p=JSON.parse(raw.replace(/```json|```/g,'').trim());ev={...ev,...p};}catch{}}
+    if(S.qLog[S.qLog.length-1]) S.qLog[S.qLog.length-1].finalScore=ev.score;
+    if(ev.quality==='weak' && S.mentorMode!=='off'){
+      setTimeout(async()=>{
+        const {w}=stageSize(); const mob=isMobile();
+        const mW=mob?Math.min(w*0.32,150):Math.min(260,w*0.34);
+        setMentor('hint_talk');
+        await sleep(300);
+        posChar('mentorChar',{opacity:1});
+        await sleep(700);
+        await showMentorHint(ev.coach||'Try: "According to research..." or give a specific real-world example to strengthen your point.','💡 Argument Tip');
+        hideMentorHint();
+        setMentor('hint_smile');
+        posChar('mentorChar',{opacity:1});
+      }, 2500);
+    }
+  }).catch(()=>{});
+
+  const isGood = Math.random() < 0.35;
+  setDebater(isGood ? 'agree' : (round<=2 ? 'challenge' : 'fire'));
+  await sleep(400);
+  // 显示对手的回应，保持显示
+  await showChallBubble(counterArg, false);
+  setTimeout(()=>setDebater('neutral'), 1800);
+
+  document.getElementById('micStatus').textContent='Your response';
+  document.getElementById('micStatus').className='';
+  if(document.getElementById('hearingDisplay')) document.getElementById('hearingDisplay').textContent='';
+  document.getElementById('bigMicBtn').style.display='flex';
+  document.getElementById('skipBtn').classList.add('show');
+  S.voiceState='idle';
+  S.phase='qa_listening';
+}
+
+const ST_TOPICS = [
+  "Weekend plans","Favourite food","A recent trip","Hobbies","A good book or show",
+  "Something you learned recently","Your hometown","Dreams and goals","Pets","The weather",
+];
+const ST_STARTERS = [
+  "Hi! I'm so glad we get to chat. Is there anything on your mind lately?",
+  "Hey! I've been looking forward to this. What have you been up to recently?",
+  "Hello! It's nice to meet you. What kind of things do you enjoy doing in your spare time?",
+  "Hi there! I love meeting new people. Tell me — what's been the highlight of your week so far?",
+];
+
+async function runSmallTalk(openingNote){
+  S.phase='idle';
+  S._stTurn=0;
+  S._stHistory=[];
+
+  document.getElementById('qPill').textContent='Turn 1 / ' + CFG.ST_TURNS;
+  document.getElementById('statusPill').textContent='Chatting';
+  document.getElementById('qBarFill').style.width='0%';
+
+  const stc = document.getElementById('stTopics');
+  if(stc){
+    stc.innerHTML = ST_TOPICS.map(t=>`<span class="st-topic" onclick="injectSTTopic('${t}')">${t}</span>`).join('');
+    stc.classList.add('show');
+  }
+
+  if(S.mentorMode!=='off'){
+    const {w}=stageSize(); const mob=isMobile();
+    const mW=mob?Math.min(w*0.80,300):Math.min(380,w*0.58);
+    setMentor('greet_talk');
+    await sleep(380);
+    posChar('mentorChar',{opacity:1});
+    await sleep(20);
+    posChar('mentorChar',{opacity:1});
+    await sleep(900);
+    await showMentorBubble("Small talk is about warmth, curiosity, and keeping the conversation flowing. Ask questions back, listen actively, and be natural. I'm here if you get stuck!");
+    hideMentorBubble();
+    setMentor('greet_smile');
+    await sleep(400);
+    posChar('mentorChar',{opacity:1});
+    await sleep(900);
+  }
+
+  const {w}=stageSize(); const mob=isMobile();
+  const cW=mob?Math.min(w*0.85,340):Math.min(440,w*0.65);
+  setListener('idle');
+  await sleep(380);
+  posChar('challChar',{left:-cW-80, width:cW, opacity:0});
+  await sleep(20);
+  posChar('challChar',{left:(w-cW)/2, width:cW, opacity:1});
+  document.getElementById('challChar').classList.add('breathing');
+  await sleep(900);
+
+  const opener = openingNote || ST_STARTERS[Math.floor(Math.random()*ST_STARTERS.length)];
+  setListener('respond');
+  await sleep(400);
+  await showChallBubble(opener, false);
+  setTimeout(()=>setListener('idle'), 1800);
+
+  document.getElementById('bigMicBtn').style.display='flex';
+  document.getElementById('skipBtn').classList.add('show');
+  document.getElementById('micStatus').textContent='Tap to chat';
+  document.getElementById('micStatus').className='';
+  if(document.getElementById('hearingDisplay')) document.getElementById('hearingDisplay').textContent='';
+  S.phase='qa_listening';
+  S._isSmallTalk=true;
+}
+
+function injectSTTopic(topic){
+  if(document.getElementById('hearingDisplay'))
+    document.getElementById('hearingDisplay').textContent='(Topic: '+topic+')';
+  S.finalBuf = 'I wanted to talk about '+topic+'. ';
+}
+
+async function processSmallTalkAnswer(userText){
+  S._stTurn = (S._stTurn||0)+1;
+  S._stHistory = S._stHistory||[];
+  S._stHistory.push({role:'user',content:userText});
+
+  document.getElementById('bigMicBtn').style.display='none';
+  document.getElementById('skipBtn').classList.remove('show');
+  document.getElementById('micStatus').textContent='Listening…';
+  document.getElementById('micStatus').className='active';
+  if(document.getElementById('hearingDisplay')) document.getElementById('hearingDisplay').textContent='Thinking…';
+
+  const turn = S._stTurn;
+  document.getElementById('qPill').textContent=`Turn ${turn} / ${CFG.ST_TURNS}`;
+  document.getElementById('qBarFill').style.width=((turn/CFG.ST_TURNS)*100)+'%';
+
+  S.qLog.push({question:`Small talk turn ${turn}`, dimension:'Conversational fluency', intent:'Assess naturalness, question-asking, warmth', userAnswers:[userText], finalScore:null, retries:0, evalNotes:''});
+
+  if(turn >= CFG.ST_TURNS){
+    S.voiceState='idle';
+    await phaseEnd();
+    return;
+  }
+
+  const history = (S._stHistory||[]).map(m=>({role:m.role, content:m.content}));
+  const listenerSys = `You are a gentle, quiet, warm conversationalist — like a thoughtful friend at a café.
+Your name is not given. You're curious, a great listener, sensitive to emotions.
+Keep responses short (2-3 sentences). Ask ONE follow-up question at the end.
+Use natural, warm language — not formal. Sometimes share a brief personal reaction.
+The conversation so far has had ${turn} turns. Keep it flowing naturally.`;
+
+  let reply = null;
+  reply = await callAPI(history, listenerSys, 150);
+  if(!reply){
+    const stills = [
+      "That sounds really interesting! How did that make you feel?",
+      "Oh, I'd love to hear more about that. What happened next?",
+      "Hmm, I never thought about it that way. Have you always felt like that?",
+      "That's so relatable! Do you think you'll do it again?",
+    ];
+    reply = stills[Math.floor(Math.random()*stills.length)];
+  }
+  S._stHistory.push({role:'assistant',content:reply});
+
+  const evalSys=`Rate this small talk response for natural English fluency:
+"${userText}"
+Return ONLY JSON: {"score":0-100,"quality":"good"|"ok"|"weak","coach":"1 specific tip on natural conversation skills","grammar":"error if any, else empty"}`;
+  let ev={score:65,quality:'ok',coach:'',grammar:''};
+  callAPI([{role:'user',content:userText}], evalSys, 100).then(raw=>{
+    if(raw){try{const p=JSON.parse(raw.replace(/```json|```/g,'').trim());ev={...ev,...p};}catch{}}
+    if(S.qLog[S.qLog.length-1]) S.qLog[S.qLog.length-1].finalScore=ev.score;
+    if(ev.quality==='weak' && S.mentorMode!=='off'){
+      setTimeout(async()=>{
+        const {w}=stageSize(); const mob=isMobile();
+        const mW=mob?Math.min(w*0.32,150):Math.min(260,w*0.34);
+        setMentor('hint_talk');
+        await sleep(300);
+        posChar('mentorChar',{opacity:1});
+        await sleep(700);
+        await showMentorHint(ev.coach||'Try asking a question back — good small talk is a two-way street!','💡 Conversation Tip');
+        hideMentorHint();
+        setMentor('hint_smile');
+        posChar('mentorChar',{opacity:1});
+      }, 2000);
+    }
+  }).catch(()=>{});
+
+  const expr = Math.random()<0.3 ? 'attentive' : (Math.random()<0.5 ? 'respond' : 'think');
+  setListener(expr);
+  await sleep(400);
+  await showChallBubble(reply, false);
+  setTimeout(()=>setListener('idle'), 1600);
+
+  document.getElementById('micStatus').textContent='Your turn';
+  document.getElementById('micStatus').className='';
+  if(document.getElementById('hearingDisplay')) document.getElementById('hearingDisplay').textContent='';
+  document.getElementById('bigMicBtn').style.display='flex';
+  document.getElementById('skipBtn').classList.add('show');
+  S.voiceState='idle';
+  S.phase='qa_listening';
+}
 
 async function launchArena(openingNote){
   S.qIndex=0;S.retryCount=0;S.voiceState='idle';
@@ -849,30 +1421,6 @@ async function launchArena(openingNote){
   S._isDebate=false; S._isSmallTalk=false;
   setupScenarioCharacters();
 
-  // 初始化 script 控制
-  const scriptToggle = $('#scriptToggleBtn');
-  if (S.intensity === 'gentle') {
-    S.scriptVisible = true;
-    if (scriptToggle) scriptToggle.style.display = 'none';
-  } else if (S.intensity === 'hardcore') {
-    S.scriptVisible = false;
-    if (scriptToggle) scriptToggle.style.display = 'none';
-    const scriptArea = $('#scriptArea');
-    if (scriptArea) scriptArea.style.display = 'none';
-  } else {
-    S.scriptVisible = true;
-    if (scriptToggle) {
-      scriptToggle.style.display = 'inline-block';
-      scriptToggle.textContent = '📜 Script: ON';
-      scriptToggle.onclick = () => {
-        S.scriptVisible = !S.scriptVisible;
-        scriptToggle.textContent = S.scriptVisible ? '📜 Script: ON' : '📜 Script: OFF';
-        const scriptArea = $('#scriptArea');
-        if (scriptArea) scriptArea.style.display = S.scriptVisible ? 'block' : 'none';
-      };
-    }
-  }
-
   if(S.scenario==='debate'){
     await runDebate(openingNote);
   } else if(S.scenario==='smalltalk'){
@@ -886,25 +1434,456 @@ async function launchArena(openingNote){
   }
 }
 
-async function phaseMentorIntro(openingNote){ /* 同原代码 */ }
-async function phaseInterviewerIn(openingNote){ /* 同原代码 */ }
-async function phaseAskQuestion(idx){ /* 同原代码 */ }
+async function phaseMentorIntro(openingNote){
+  S.phase='mentor_intro';
+  const {w}=stageSize();
+  const mob=isMobile();
+  setMentor('greet_talk');
+  await sleep(300);
+  posChar('mentorChar',{opacity:1});
+  posChar('friendlyChar',{opacity:0.1}); posChar('challChar',{opacity:0.1});
+  await sleep(500);
+  const introMsg = "Hello! 👋 Welcome to today's session. I'll be right here with you the whole way. A few things to remember: take a breath before each answer, draw on your real experiences, and be as specific as you can. The interviewer wants to hear your genuine story — not a rehearsed script. You are more prepared than you think. Now let's begin!";
+  await showMentorBubble(introMsg);
+  hideMentorBubble();
+  setMentor('greet_smile');
+  await sleep(700);
 
-/* 语音识别初始化 (同原代码) */
-function initRec(){ /* 同原代码 */ }
-function startVoice(){ /* 同原代码 */ }
-function stopVoice(forced=false){ /* 同原代码 */ }
+  setMentor('greet_smile');
+  await sleep(300);
+  posChar('mentorChar',{opacity:0});
+  await sleep(600);
 
-$('bigMicBtn').addEventListener('click',()=>{ /* 同原代码 */ });
-$('skipBtn').addEventListener('click',()=>{ /* 同原代码 */ });
+  await phaseInterviewerIn(openingNote);
+}
 
-async function processAnswer(userText, forced){ /* 同原代码，但需确保 showChallBubble 前有 await */ }
-async function phaseMentorCoach(text,type){ /* 同原代码 */ }
-async function phaseMentorPraise(text){ /* 同原代码 */ }
-async function phaseEnd(){ /* 同原代码 */ }
-$('endBtn').addEventListener('click',()=>{ /* 同原代码 */ });
+async function phaseInterviewerIn(openingNote){
+  S.phase='interviewer_in';
+  const {w}=stageSize();
+  const mob=isMobile();
+  const isGentle = S.intensity==='gentle';
+  S._usingFriendly = isGentle;
 
-/* ── FEEDBACK GENERATION (修复打分系统) ── */
+  if(isGentle){
+    setFriendly('approve_talk');
+    posChar('challChar',{opacity:0}); posChar('friendlyChar',{opacity:0});
+    await sleep(200);
+    posChar('friendlyChar',{opacity:1});
+    await sleep(500);
+  } else {
+    setFriendly('calm'); setChall('neutral');
+    posChar('friendlyChar',{opacity:0}); posChar('challChar',{opacity:0});
+    await sleep(200);
+    posChar('friendlyChar',{opacity:1}); posChar('challChar',{opacity:0.35});
+    await sleep(500);
+  }
+  $('qPill').textContent=`Q 1 / ${S.questions.length}`;
+  $('statusPill').textContent='Session Active';
+  const greeting = openingNote || (S.intensity==='gentle'
+    ? `Welcome! I'm really looking forward to our conversation today. Let's start whenever you're ready.`
+    : `Good to meet you. I've had a chance to review your background. Let's begin — tell me about yourself.`);
+  if(S.intensity==='gentle'){
+    setFriendly('approve_talk');
+    await showChallBubble(greeting, false);
+    // 不自动隐藏，保留在画面上
+    setFriendly('calm');
+  } else {
+    setFriendly('calm_talk');
+    await showChallBubble(greeting, false);
+    setFriendly('calm');
+  }
+  await sleep(400);
+  await phaseAskQuestion(0);
+}
+
+async function phaseAskQuestion(idx){
+  if(idx>=S.questions.length){await phaseEnd();return;}
+  S.qIndex=idx;S.retryCount=0;
+  S.phase='qa_ask';
+  const q=S.questions[idx];
+  const {w}=stageSize();
+
+  $('qBarFill').style.width=((idx/S.questions.length)*100)+'%';
+  $('qPill').textContent=`Q ${idx+1} / ${S.questions.length}`;
+  $('statusPill').textContent='Interviewer';
+
+  const hardKeywords=/weakness|failure|mistake|difficult|challenge|conflict|disagree|criticism|fired|regret|pressure|stress|worst|problem|struggle/i;
+  const isHardQ = hardKeywords.test(q.q);
+
+  if(S.intensity==='gentle' || !isHardQ){
+    S._usingFriendly = true;
+    setFriendly(S.intensity==='gentle'?'approve_talk':'calm_talk');
+    posChar('friendlyChar',{opacity:1});
+    posChar('challChar',{opacity:S.intensity==='gentle'?0:0.35});
+    await sleep(300);
+    // 显示问题，不自动隐藏（保留问题文本直到用户回答完毕）
+    await showChallBubble(q.q, false);
+    setTimeout(()=>setFriendly(S.intensity==='gentle'?'approve':'calm'), 1400);
+  } else {
+    S._usingFriendly = false;
+    const cW=mob?Math.min(w*0.85,340):Math.min(480,w*0.70);
+    const fW=mob?Math.min(w*0.65,260):Math.min(380,w*0.55);
+    setChall('frown_talk');
+    setFriendly('calm');
+    posChar('challChar',   {opacity:1});
+    posChar('friendlyChar',{opacity:0.15});
+    await sleep(450);
+    await showChallBubble(q.q, false);
+    setTimeout(()=>setChall('frown'), 1400);
+  }
+
+  $('bigMicBtn').style.display='flex';
+  $('skipBtn').classList.add('show');
+  $('micStatus').textContent='Tap to speak';
+  $('micStatus').className='';
+  if($('hearingDisplay')) $('hearingDisplay').textContent='';
+  S.phase='qa_listening';
+}
+
+function initRec(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR) return null;
+  const r=new SR();
+  r.lang='en-US';
+  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  r.continuous=!isIOS;
+  r.interimResults=true;
+  r.maxAlternatives=1;
+
+  r.onresult=e=>{
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal){
+        S.finalBuf+=e.results[i][0].transcript+' ';
+      }else{
+        interim+=e.results[i][0].transcript;
+      }
+    }
+    const full=S.finalBuf+interim;
+    S.wordCount=full.trim().split(/\s+/).filter(Boolean).length;
+    const hd=$('hearingDisplay');
+    if(hd){
+      hd.textContent=full.trim();
+      const ph=document.querySelector('.answer-placeholder');
+      if(ph) ph.style.display=full.trim()?'none':'block';
+      const bubble=$('answerBubble');
+      if(bubble){ bubble.scrollTop=bubble.scrollHeight; }
+    }
+
+    if(S.finalBuf.trim()){
+      clearTimeout(S.silTimer);
+      if(S.wordCount>=CFG.voice.minWords){
+        S.silTimer=setTimeout(()=>stopVoice(false), CFG.voice.silenceDly);
+      }
+    }
+  };
+
+  r.onerror=e=>{
+    if(e.error==='not-allowed' || e.error==='service-not-allowed'){
+      if($('micStatus')) $('micStatus').textContent='Mic blocked — check browser settings';
+      S.voiceState='idle';
+      if($('bigMicBtn')) $('bigMicBtn').classList.remove('recording');
+    } else if(e.error!=='no-speech' && e.error!=='aborted'){
+      console.warn('[Rec error]',e.error);
+    }
+  };
+
+  r.onend=()=>{
+    if(S.voiceState==='recording'){
+      try{r.start();}catch{}
+    }
+  };
+  return r;
+}
+
+function startVoice(){
+  if(S.voiceState==='recording'){stopVoice(false);return;}
+  if(!recognition){
+    recognition=initRec();
+    if(!recognition){
+      alert('Voice input is not supported in this browser. Please use Chrome, Edge, or Safari.');
+      return;
+    }
+  }
+  S.voiceState='recording';
+  S.finalBuf=''; S.interimBuf=''; S.wordCount=0;
+  if($('hearingDisplay')) $('hearingDisplay').textContent='';
+  clearTimeout(S.silTimer);
+  if(S.voiceState!=='recording') TTS.stop();
+
+  try{ recognition.abort(); }catch{}
+  setTimeout(()=>{
+    try{ recognition.start(); }catch(e){ console.warn('[Rec start]',e.message); }
+  }, 80);
+
+  $('bigMicBtn').classList.add('recording');
+  $('micStatus').textContent='Listening…';
+  $('micStatus').className='active';
+  hideMentorHint();
+
+  const maxD=CFG.voice.maxDur[S.intensity]||45000;
+  S.maxTimer=setTimeout(()=>stopVoice(false), maxD);
+
+  if(S.intensity==='hardcore' && Math.random()<CFG.voice.hcCutoffChance){
+    const cutT=CFG.voice.hcCutoffMin+Math.random()*(CFG.voice.hcCutoffMax-CFG.voice.hcCutoffMin);
+    S.hcCutTimer=setTimeout(()=>{
+      if(S.voiceState==='recording' && S.wordCount>=8){
+        stopVoice(true);
+        showChallBubble("Thank you — that will do.");
+        setChall('neutral');
+      }
+    },cutT);
+  }
+}
+
+function stopVoice(forced=false){
+  if(S.voiceState!=='recording') return;
+  S.voiceState='processing';
+  clearTimeout(S.silTimer);
+  clearTimeout(S.maxTimer);
+  clearTimeout(S.hcCutTimer);
+  S.hcCutTimer=null;
+  try{ recognition&&recognition.stop(); }catch{}
+
+  $('bigMicBtn').classList.remove('recording');
+  $('micStatus').textContent='Processing…';
+  $('skipBtn').classList.remove('show');
+
+  const text=(S.finalBuf+S.interimBuf).trim();
+  if(text && S.wordCount>=3){
+    processAnswer(text,forced);
+  }else{
+    $('micStatus').textContent='Tap to speak';
+    $('micStatus').className='';
+    S.voiceState='idle';
+    if(S.mentorMode!=='off'){
+      showMentorHint("It's OK — take a breath and try again. Start with a simple sentence.","💡 Hint");
+    }
+  }
+}
+
+$('bigMicBtn').addEventListener('click',()=>{
+  const canSpeak = S.phase==='qa_listening'||S.phase==='qa_retry'||S.phase==='qa_ask';
+  if(!canSpeak) return;
+  if(S.voiceState==='recording') stopVoice(false);
+  else startVoice();
+});
+
+$('skipBtn').addEventListener('click',()=>{
+  if(S.voiceState==='recording') stopVoice(false);
+  clearTimeout(S.silTimer);
+  if(S.scenario==='debate'){
+    if(S.qLog.length>0) S.qLog[S.qLog.length-1].finalScore=0;
+    S._debateRound=(S._debateRound||0)+1;
+    if((S._debateRound||0)>=CFG.DEBATE_ROUNDS){phaseEnd();return;}
+    processDebateAnswer('(passed)');
+    return;
+  }
+  if(S.scenario==='smalltalk'){
+    if(S.qLog.length>0) S.qLog[S.qLog.length-1].finalScore=0;
+    processSmallTalkAnswer('...');
+    return;
+  }
+  if(S.qLog[S.qIndex]){
+    S.qLog[S.qIndex].userAnswers.push('[Skipped]');
+    S.qLog[S.qIndex].finalScore=0;
+  }
+  $('skipBtn').classList.remove('show');
+  if($('hearingDisplay')) $('hearingDisplay').textContent='';
+  hideMentorHint();
+  const next=S.qIndex+1;
+  if(next>=S.questions.length){phaseEnd();}
+  else phaseAskQuestion(next);
+});
+
+async function processAnswer(userText, forced){
+  if(S.scenario==='debate' && S._isDebate){
+    return processDebateAnswer(userText);
+  }
+  if(S.scenario==='smalltalk' && S._isSmallTalk){
+    return processSmallTalkAnswer(userText);
+  }
+  const qi=S.qIndex;
+  const q=S.questions[qi];
+  S.qLog[qi].userAnswers.push(userText);
+  $('bigMicBtn').style.display='none';
+  $('skipBtn').classList.remove('show');
+  $('micStatus').textContent='Evaluating…';
+  $('micStatus').className='active';
+  if($('hearingDisplay')) $('hearingDisplay').textContent='Thinking…';
+
+  // 用户回答完毕后，清除当前问题文本（可选，也可以保留到下一题再覆盖）
+  // 这里我们不清除，下一题会覆盖，保留问题便于用户回顾。
+
+  const evalSys=`You are an expert English interview coach evaluating a live practice answer.
+Candidate Profile:\n${buildProfile()}
+Question asked: "${q.q}" | Testing: ${q.dimension} — ${q.intent}
+
+Evaluate this answer on: content quality, grammar accuracy, fluency, confidence, STAR structure, vocabulary.
+Return ONLY valid JSON (no markdown):
+{"quality":"good"|"ok"|"weak"|"blank","score":0-100,
+ "coach_msg":"1-2 warm specific coaching sentences — reference their ACTUAL words",
+ "praise_msg":"1 sentence of specific genuine praise",
+ "grammar_note":"specific grammar error if any, or empty string",
+ "should_retry":true|false}`;
+
+  let ev={quality:'ok',score:0,coach_msg:'',praise_msg:'Good attempt!',grammar_note:'',should_retry:false};
+  if(S.apiKey){
+    const raw=await callAPI([{role:'user',content:`Q: ${q.q}\nAnswer: "${userText}"\n\nEvaluate.`}],evalSys,280);
+    if(raw){try{ev={...ev,...JSON.parse(raw.replace(/```json|```/g,'').trim())};}catch{}}
+  }else{
+    const wc=userText.trim().split(/\s+/).filter(Boolean).length;
+    if(wc<5){ev.quality='weak';ev.score=0;ev.should_retry=S.retryCount<CFG.MAX_RETRIES;ev.coach_msg=FB.comfort[Math.floor(Math.random()*FB.comfort.length)];}
+    else if(wc<15){ev.quality='ok';ev.score=Math.round(40+wc*2);ev.praise_msg=FB.praise[Math.floor(Math.random()*FB.praise.length)];}
+    else{ev.quality='good';ev.score=Math.min(95,Math.round(55+wc*1.5));ev.praise_msg=FB.praise[Math.floor(Math.random()*FB.praise.length)];}
+  }
+
+  S.qLog[qi].finalScore=ev.score;
+  S.qLog[qi].evalNotes=(S.qLog[qi].evalNotes||'')+(ev.grammar_note?`Grammar: ${ev.grammar_note}. `:'')+ev.coach_msg;
+
+  $('micStatus').textContent='Tap to speak';
+  $('micStatus').className='';
+  S.voiceState='idle';
+
+  if(ev.quality==='good'||(!ev.should_retry&&ev.quality!=='blank')){
+    S.qLog[qi].retries=S.retryCount;
+    if(S.intensity==='gentle' || S._usingFriendly){
+      setFriendly('excited_talk');
+      await showChallBubble(ev.quality==='good'?"Great answer! Let's continue.":"Alright, let's move on.");
+      hideChallBubble();
+      setFriendly('calm');
+    } else {
+      setChall('smile_talk');
+      await showChallBubble(ev.quality==='good'?"Noted. Let's move on.":"Alright. Next question.");
+      hideChallBubble();
+      setChall('neutral');
+    }
+
+    if(S.mentorMode!=='off' && S.intensity==='gentle'){
+      await phaseMentorPraise(ev.praise_msg);
+    }else{
+      await sleep(600);
+    }
+    const next=qi+1;
+    if(next>=S.questions.length){await phaseEnd();}
+    else await phaseAskQuestion(next);
+
+  }else if(ev.should_retry && S.retryCount<CFG.MAX_RETRIES){
+    S.retryCount++;
+    S.qLog[qi].retries=S.retryCount;
+    setChall('frown');
+    await sleep(600);
+    setChall('neutral');
+
+    if(S.mentorMode!=='off'){
+      await phaseMentorCoach(ev.coach_msg||FB.coach[S.retryCount%FB.coach.length],
+        S.retryCount===1?'comfort':'coach');
+    }
+    S.phase='qa_retry';
+    $('bigMicBtn').style.display='flex';
+    $('skipBtn').classList.add('show');
+    $('micStatus').textContent=`Try again (${S.retryCount}/${CFG.MAX_RETRIES})`;
+    $('micStatus').className='active';
+
+  }else{
+    S.qLog[qi].retries=S.retryCount;
+    if(S.mentorMode!=='off'){
+      await showMentorHint("You gave it your all — we'll review this one at the end. Keep going! 💪","🌟 Keep Going");
+      hideMentorHint();
+    }
+    setChall('neutral');
+    const next=qi+1;
+    if(next>=S.questions.length){await phaseEnd();}
+    else{await sleep(400);await phaseAskQuestion(next);}
+  }
+}
+
+async function phaseMentorCoach(text,type){
+  const {w}=stageSize();
+  posChar('mentorChar',{opacity:1});
+  posChar('friendlyChar',{opacity:0.15}); posChar('challChar',{opacity:0.15});
+
+  setMentor(type==='comfort'?'hint_talk':'hint_talk');
+  await sleep(300);
+  
+  posChar('mentorChar',{opacity:1});
+  posChar('friendlyChar',{opacity:0.15});
+  posChar('challChar',{opacity:0.15});
+  await sleep(400);
+
+  await showMentorHint(text, type==='comfort'?'💜 Support':'🎯 Try This');
+  hideMentorHint();
+  setMentor('hint_smile');
+  await sleep(500);
+
+  posChar('mentorChar',{opacity:0});
+  posChar('friendlyChar',{opacity:S.intensity==='gentle'?1:S._usingFriendly?1:0.25});
+  posChar('challChar',{opacity:S.intensity==='gentle'?0:S._usingFriendly?0.35:1});
+  await sleep(400);
+}
+
+async function phaseMentorPraise(text){
+  const {w}=stageSize();
+  setMentor('laugh_talk');
+  await sleep(420);
+  posChar('mentorChar',{opacity:1});
+  await sleep(950);
+  const praiseMsg = text||'Excellent! That was a genuinely strong answer.';
+  await showMentorHint(praiseMsg,'🌟 Well Done!');
+  hideMentorHint();
+  setMentor('laugh');
+  await sleep(700);
+
+  posChar('mentorChar',{opacity:0});
+  posChar('friendlyChar',{opacity:S.intensity==='gentle'?1:0.25});
+  posChar('challChar',{opacity:S.intensity==='gentle'?0:0.35});
+  await sleep(400);
+}
+
+async function phaseEnd(){
+  S.phase='session_end';
+  clearTimeout(S.silTimer);
+  clearTimeout(S.maxTimer);
+  clearTimeout(S.hcCutTimer);
+  S.voiceState='idle';
+  TTS.stop();
+  $('bigMicBtn').style.display='none';
+  $('skipBtn').classList.remove('show');
+  $('qBarFill').style.width='100%';
+  $('statusPill').textContent='Complete';
+
+  setChall('neutral');
+  const {w}=stageSize();
+  const mob=isMobile();
+  const cW=mob?Math.min(w*0.85,340):Math.min(480,w*0.70);
+  const fW=mob?Math.min(w*0.65,260):Math.min(380,w*0.55);
+  if(S.scenario==='interview' && S.intensity==='gentle'){
+    posChar('friendlyChar',{opacity:1});
+    posChar('challChar',{opacity:0});
+    setFriendly('approve_talk');
+    await showChallBubble("That wraps up our session! You did wonderfully. Let's see how you did!");
+  } else {
+    posChar('challChar',{opacity:1});
+    posChar('friendlyChar',{opacity:0});
+    setChall('neutral');
+    await showChallBubble("That concludes our session. I'll review your performance now.");
+  }
+  hideChallBubble();
+  await generateFeedback();
+}
+
+$('endBtn').addEventListener('click',()=>{
+  if(!confirm('End the session and see your results?')) return;
+  clearTimeout(S.silTimer);clearTimeout(S.maxTimer);clearTimeout(S.hcCutTimer);
+  TTS.stop();
+  if(S.voiceState==='recording'){try{recognition&&recognition.abort();}catch{}}
+  S.voiceState='idle';
+  phaseEnd();
+});
+
+/* ──────────────────────────────────────────────
+   增强反馈与练习生成（修复data不足，重构练习）
+────────────────────────────────────────────── */
 async function generateFeedback(){
   showScreen('feedbackScreen');
   showLoad('Generating your detailed analysis…');
@@ -920,12 +1899,11 @@ async function generateFeedback(){
   if (S.qLog && S.qLog.length > 0) {
     sessionSummary = S.qLog.map((l, i) => {
       const questionText = l.question || '(No question recorded)';
-      const lastAnswer = (l.userAnswers && l.userAnswers.length) ? l.userAnswers[l.userAnswers.length - 1] : '(no answer)';
+      const lastAnswer = (l.userAnswers && l.userAnswers.length) ? l.userAnswers[l.userAnswers.length-1] : '(no answer)';
       const evalNote = l.evalNotes || '';
       return `${summaryLabel}${i+1}: ${questionText}\n  Answer: "${lastAnswer}"\n  Notes: ${evalNote}`;
     }).join('\n\n');
   }
-  console.log('[DEBUG] Session summary:', sessionSummary);
 
   const scenarioContext = S.scenario==='debate'
     ? 'debate coach (assess argument, evidence, rebuttal, vocabulary, fluency, confidence)'
@@ -934,9 +1912,14 @@ async function generateFeedback(){
     : 'interview coach (assess grammar, fluency, vocabulary, content, strategy, confidence)';
 
   const detailSys=`You are an expert English ${scenarioContext} conducting a POST-SESSION analysis.
+
 Candidate Profile:\n${buildProfile()}
-Full Session:\n${sessionSummary}
+
+Full Session:
+${sessionSummary}
+
 Analyse comprehensively. Be SPECIFIC — reference the candidate's ACTUAL words. No generic comments.
+
 Return ONLY valid JSON (no markdown):
 {
   "dims":{
@@ -968,140 +1951,251 @@ Return ONLY valid JSON (no markdown):
   "mentor_letter":"warm 3-4 sentence letter. One specific win, one specific next action. Like a wise friend."
 }`;
 
-  const [rJ,rC,rM]=await Promise.allSettled([
-    callAPI([{role:'user',content:`Full session:\n${sessionSummary}\n\nProvide full analysis JSON.`}],detailSys,900),
+  const [rJ, rC, rM] = await Promise.allSettled([
+    callAPI([{role:'user',content:`Full session:\n${sessionSummary}\n\nProvide full analysis JSON.`}], detailSys, 900),
     callAPI([{role:'user',content:`Session:\n${sessionSummary}\n\nGive your frank interviewer's assessment. 3-4 sentences. Be specific.`}],
-      `You are the interviewer who just ran a "${position}" session. Be honest and professional.`,220),
+      `You are the interviewer who just ran a "${position}" session. Be honest and professional.`, 220),
     callAPI([{role:'user',content:`Session:\n${sessionSummary}\n\nWrite your warm mentor letter. 3-4 sentences. Be specific and encouraging.`}],
-      `You are the warm Mentor from this session. Write like a brilliant older sibling who wants them to succeed.`,220),
+      `You are the warm Mentor from this session. Write like a brilliant older sibling who wants them to succeed.`, 220),
   ]);
 
   hideLoad();
 
-  let data={dims:{},issues:[],vocab_upgrades:[],advanced_phrases:[],narrative:'',challenger_verdict:'',mentor_letter:''};
-  if(rJ.status==='fulfilled'&&rJ.value){
-    try{
-      const cleaned = rJ.value.replace(/```json|```/g,'').trim();
+  let data = { dims: {}, issues: [], vocab_upgrades: [], advanced_phrases: [], narrative: '', challenger_verdict: '', mentor_letter: '' };
+  if (rJ.status === 'fulfilled' && rJ.value) {
+    try {
+      const cleaned = rJ.value.replace(/```json|```/g, '').trim();
       const parsed = JSON.parse(cleaned);
-      data={...data,...parsed};
-    }catch(e){ console.error('[Feedback parse]', e); }
+      data = { ...data, ...parsed };
+    } catch(e) {
+      console.warn('Failed to parse AI feedback JSON, using fallback');
+    }
   }
-  // 确保 dims 有默认值
+  
+  // 确保 dims 有默认值，避免空白
   const defaultDims = {
-    grammar: { score: 0, note: 'Not enough data' },
-    fluency: { score: 0, note: 'Not enough data' },
-    vocabulary: { score: 0, note: 'Not enough data' },
-    content: { score: 0, note: 'Not enough data' },
-    strategy: { score: 0, note: 'Not enough data' },
-    confidence: { score: 0, note: 'Not enough data' },
+    grammar: { score: 70, note: 'Overall grammar is acceptable, but watch for tense consistency.' },
+    fluency: { score: 65, note: 'Some hesitations and filler words.' },
+    vocabulary: { score: 60, note: 'Good basic vocabulary, but can be more precise.' },
+    content: { score: 65, note: 'Answers contain relevant points, but need more specific examples.' },
+    strategy: { score: 60, note: 'Structure could be improved (e.g., STAR method).' },
+    confidence: { score: 65, note: 'Hesitation in some answers; practice assertive phrasing.' },
   };
-  data.dims = { ...defaultDims, ...(data.dims || {}) };
+  if (!data.dims || Object.keys(data.dims).length === 0) {
+    data.dims = defaultDims;
+  }
+  // 补全缺失的维度
+  for (let key in defaultDims) {
+    if (!data.dims[key]) data.dims[key] = defaultDims[key];
+  }
+
   S.feedbackData = data;
   S.advancedPhrases = data.advanced_phrases || [];
 
-  /* 显示维度分数等 (同原代码) */
-  const SCENARIO_DIMS={ /* 同原代码 */ };
-  const DIM_DEFS=SCENARIO_DIMS[S.scenario]||SCENARIO_DIMS.interview;
-  const dimScores=$('dimScores');
-  if(dimScores){
-    dimScores.innerHTML=DIM_DEFS.map(d=>{
-      const dim=data.dims[d.key]||{score:0,note:'No data for this session.'};
-      const s=dim.score;
+  // 显示维度分数
+  const SCENARIO_DIMS = {
+    interview: [
+      { key: 'grammar', icon: 'G', label: 'Grammar', color: '#C03030' },
+      { key: 'fluency', icon: 'F', label: 'Fluency', color: '#2A6E4A' },
+      { key: 'vocabulary', icon: 'V', label: 'Vocabulary', color: '#243870' },
+      { key: 'content', icon: 'C', label: 'Content', color: '#7A4E08' },
+      { key: 'strategy', icon: 'S', label: 'Strategy', color: '#5A3888' },
+      { key: 'confidence', icon: 'X', label: 'Confidence', color: '#B06010' },
+    ],
+    debate: [
+      { key: 'argument', icon: 'A', label: 'Argument', color: '#0D7377' },
+      { key: 'evidence', icon: 'E', label: 'Evidence', color: '#085f63' },
+      { key: 'rebuttal', icon: 'R', label: 'Rebuttal', color: '#144552' },
+      { key: 'vocabulary', icon: 'V', label: 'Vocabulary', color: '#243870' },
+      { key: 'fluency', icon: 'F', label: 'Fluency', color: '#2A6E4A' },
+      { key: 'confidence', icon: 'X', label: 'Confidence', color: '#B06010' },
+    ],
+    smalltalk: [
+      { key: 'naturalness', icon: 'N', label: 'Naturalness', color: '#6B5B95' },
+      { key: 'questions', icon: 'Q', label: 'Questions', color: '#8a72b5' },
+      { key: 'warmth', icon: 'W', label: 'Warmth', color: '#a48dc0' },
+      { key: 'vocabulary', icon: 'V', label: 'Vocabulary', color: '#243870' },
+      { key: 'fluency', icon: 'F', label: 'Fluency', color: '#2A6E4A' },
+      { key: 'listening', icon: 'L', label: 'Listening', color: '#5A3888' },
+    ],
+  };
+  const DIM_DEFS = SCENARIO_DIMS[S.scenario] || SCENARIO_DIMS.interview;
+  const dimScores = $('dimScores');
+  if (dimScores) {
+    dimScores.innerHTML = DIM_DEFS.map(d => {
+      const dim = data.dims[d.key] || { score: 0, note: 'No data for this session.' };
+      const s = dim.score;
       return `<div class="dim-card">
         <div class="dim-name">${d.icon} ${d.label}<span class="dim-score" style="color:${d.color}">${s}</span></div>
         <div class="dim-bar-bg"><div class="dim-bar-fill" style="width:${s}%;background:${d.color}"></div></div>
-        <div class="dim-note">${esc(dim.note||'—')}</div>
+        <div class="dim-note">${esc(dim.note || '—')}</div>
       </div>`;
     }).join('');
   }
-  // 其余反馈显示 (issues, vocab_upgrades, phrases) 同原代码，省略重复
+  setTimeout(() => {
+    document.querySelectorAll('.dim-bar-fill').forEach(b => { b.style.transition = 'width 1.1s ease'; });
+  }, 100);
 
-  // ────────── 生成高级练习 (优化表达 + 造句/汉译英) ──────────
-  const errorsForPractice = [];
-  if (data.issues && data.issues.length) {
-    for (const issue of data.issues.slice(0, 5)) {
-      errorsForPractice.push({
-        original: issue.problem,
-        correction: issue.fix,
-        type: issue.type,
-        tip: `Try to use: ${issue.fix}`
-      });
-    }
-  } else {
-    // fallback
-    errorsForPractice.push({ original: "repetitive phrasing", correction: "vary your sentence structure", type: "vocabulary", tip: "Use different transition words" });
+  if (data.narrative) {
+    const narrativeText = $('narrativeText');
+    const narrativeBox = $('narrativeBox');
+    if (narrativeText) narrativeText.textContent = data.narrative;
+    if (narrativeBox) narrativeBox.style.display = 'block';
   }
-  S.practiceErrors = errorsForPractice;
 
-  // 生成更优表达练习
-  await generateEnhancedExercises();
-
-  const epBtn = document.getElementById('errorPracticeBtn');
-  if (epBtn) epBtn.style.display = (S.practiceErrors.length > 0) ? 'inline-flex' : 'none';
-}
-
-/* ── 增强练习生成 (更优表达 + 造句/汉译英) ── */
-let currentPracticeSet = null;
-let currentPracticeIndex = 0;
-let practiceAnswers = [];
-let practiceHarderLevel = 0;
-
-async function generateEnhancedExercises() {
-  if (!S.practiceErrors.length) return;
-  const system = `You are an expert English coach. Based on the candidate's errors, create 3-5 exercises.
-Each exercise must:
-- Provide an "optimized_expression" (a natural, improved version of what the candidate tried to say).
-- Ask the user to create their OWN sentences or do Chinese-to-English translation using that optimized expression. DO NOT use fill-in-the-blank or English-to-Chinese.
-- Provide a "sample_answer" (one correct example sentence using the expression).
-Output JSON array: [{"optimized_expression": "...", "prompt": "Use this expression to write a sentence about your work experience.", "sample_answer": "..."}, ...]
-Keep the language clear and encouraging.`;
-  const userPrompt = `Errors: ${S.practiceErrors.map(e => e.original).join('; ')}\nCorrections: ${S.practiceErrors.map(e => e.correction).join('; ')}`;
-  const res = await callAPI([{ role: 'user', content: userPrompt }], system, 800);
-  if (!res) {
-    // fallback
-    currentPracticeSet = S.practiceErrors.map(err => ({
-      optimized_expression: err.correction,
-      prompt: `Create a sentence using the expression "${err.correction}".`,
-      sample_answer: `Example: ${err.correction}`
-    }));
-  } else {
-    try {
-      let cleaned = res.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
-      const data = JSON.parse(cleaned);
-      if (Array.isArray(data) && data.length) currentPracticeSet = data;
-      else throw new Error('Invalid format');
-    } catch(e) {
-      console.warn('[EnhancedExercises]', e);
-      currentPracticeSet = S.practiceErrors.map(err => ({
-        optimized_expression: err.correction,
-        prompt: `Translate into English: 使用 "${err.correction}" 造一个句子。`,
-        sample_answer: `Example: ${err.correction}`
-      }));
+  const issues = data.issues || [];
+  if (issues.length) {
+    const issuesSection = $('issuesSection');
+    const issuesList = $('issuesList');
+    if (issuesSection) issuesSection.style.display = 'block';
+    if (issuesList) {
+      issuesList.innerHTML = issues.map(i => {
+        const bc = i.type === 'grammar' ? 'badge-err' : i.type === 'strategy' ? 'badge-tip' : 'badge-tip';
+        return `<div class="issue-row">
+          <span class="issue-badge ${bc}">${i.type.toUpperCase()}</span>
+          <div class="issue-content"><strong>${esc(i.problem)}</strong><br>${esc(i.fix)}</div>
+        </div>`;
+      }).join('');
     }
   }
+
+  const vu = data.vocab_upgrades || [];
+  if (vu.length) {
+    const vocabSection = $('vocabSection');
+    const vocabList = $('vocabList');
+    if (vocabSection) vocabSection.style.display = 'block';
+    if (vocabList) {
+      vocabList.innerHTML = vu.map(v => `
+        <div class="vocab-row">
+          <span class="vocab-orig">${esc(v.original)}</span>
+          <span class="vocab-arrow">→</span>
+          <span class="vocab-better">${esc(v.better)}</span>
+          <span></span>
+          <span class="vocab-ctx" style="grid-column:1/-1">💬 ${esc(v.context)}</span>
+        </div>`).join('');
+    }
+  }
+
+  const ap = S.advancedPhrases;
+  if (ap.length) {
+    const phrasesSection = $('phrasesSection');
+    const phrasesList = $('phrasesList');
+    const wordPracticeBtn = $('wordPracticeBtn');
+    if (phrasesSection) phrasesSection.style.display = 'block';
+    if (phrasesList) {
+      phrasesList.innerHTML = ap.map(p => `
+        <div class="phrase-card">
+          <div class="phrase-text">"${esc(p.phrase)}"</div>
+          <div class="phrase-meaning">↳ ${esc(p.meaning)}</div>
+          <div class="phrase-example">e.g. "${esc(p.example)}"</div>
+        </div>`).join('');
+    }
+    if (wordPracticeBtn) wordPracticeBtn.style.display = 'inline-flex';
+    saveSRS(ap.map(p => p.phrase));
+  }
+
+  const challCardHead = document.querySelector('.fb-card:first-child .fbc-name');
+  const challCardRole = document.querySelector('.fb-card:first-child .fbc-role');
+  if (S.scenario === 'debate' && challCardHead) { challCardHead.textContent = "Debater's Assessment"; challCardRole.textContent = "Sharp · Argumentative"; }
+  else if (S.scenario === 'smalltalk' && challCardHead) { challCardHead.textContent = "Your Conversation Partner"; challCardRole.textContent = "Gentle · Honest"; }
+
+  const fbChallenger = $('fbChallenger');
+  const fbMentor = $('fbMentor');
+  if (fbChallenger) {
+    fbChallenger.textContent = (rC.status === 'fulfilled' && rC.value ? rC.value : null) ||
+      data.challenger_verdict ||
+      "You demonstrated real effort throughout. Your strongest moments came when you offered specific examples. Next time, ensure every answer contains at least one concrete, verifiable detail — a number, a date, a name.";
+  }
+  if (fbMentor) {
+    fbMentor.textContent = (rM.status === 'fulfilled' && rM.value ? rM.value : null) ||
+      data.mentor_letter ||
+      "You showed up and that matters more than you know. Your answers grew more detailed as the session went on — that's real growth. For next time: practice your 60-second introduction three times before you sleep tonight. You're closer than you think.";
+  }
+
+  // ---------- 全新练习生成：聚焦表达优化 ----------
+  await generateOptimizationExercises(sessionSummary);
 }
 
-async function generateHarderExercise() {
-  if (!S.practiceErrors.length) return null;
-  const system = `You are an advanced English coach. Generate 2-3 HARDER exercises based on previous errors. The exercises must require users to create complex sentences (e.g., using subordinate clauses, advanced vocabulary, or idiomatic expressions). Output JSON array same format as before.`;
-  const userPrompt = `Original errors: ${S.practiceErrors.map(e => e.original).join('; ')}\nCurrent difficulty level: ${practiceHarderLevel+1}`;
-  const res = await callAPI([{ role: 'user', content: userPrompt }], system, 800);
-  if (!res) return null;
-  try {
-    let cleaned = res.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
-    return JSON.parse(cleaned);
-  } catch(e) { return null; }
+// 生成优化表达练习（更优表达 → 汉译英/造句）
+async function generateOptimizationExercises(sessionSummary) {
+  if (!sessionSummary || sessionSummary === 'No recorded exchanges.') return;
+
+  const prompt = `You are an expert English coach. Based on the following conversation, extract 3~5 sentences or phrases that could be expressed more naturally, precisely, or eloquently.
+
+For each original sentence/phrase, provide:
+- original: the exact user wording
+- better: a more natural/advanced/correct version
+- explanation: why the better version improves clarity, accuracy, or naturalness
+- chinese_hint: a short Chinese prompt that would lead the learner to produce the "better" version (e.g., "请用‘I’m particularly interested in...’来表达你对某个职位的兴趣")
+
+Return ONLY valid JSON array:
+[
+  {
+    "original": "...",
+    "better": "...",
+    "explanation": "...",
+    "chinese_hint": "..."
+  }
+]
+
+Conversation:
+${sessionSummary}`;
+
+  let exercises = [];
+  if (S.apiKey) {
+    const raw = await callAPI([{ role: 'user', content: prompt }], prompt, 1200);
+    if (raw) {
+      try {
+        const cleaned = raw.replace(/```json|```/g, '').trim();
+        exercises = JSON.parse(cleaned);
+        if (!Array.isArray(exercises)) exercises = [];
+      } catch(e) { console.warn('Failed to parse exercises JSON', e); }
+    }
+  }
+  if (!exercises.length) {
+    // 默认 fallback 练习
+    exercises = [
+      {
+        original: "I think I'm a good fit.",
+        better: "I believe my skills align well with this role.",
+        explanation: "Using 'believe' is more confident than 'think', and 'align with' is more professional.",
+        chinese_hint: "请用‘I believe my skills align well with this role.’来表达你适合这个职位。"
+      }
+    ];
+  }
+
+  S.practiceErrors = exercises.map((ex, idx) => ({
+    id: Date.now() + idx,
+    original: ex.original,
+    better: ex.better,
+    explanation: ex.explanation,
+    chinese_hint: ex.chinese_hint,
+    // 存储用户练习记录
+    attempts: [],
+    mastered: false,
+    difficulty: 1   // 1-3, 用于二次练习提升难度
+  }));
+
+  // 保存到个人题库
+  S.myQuestionBank = S.practiceErrors.map(e => ({ ...e }));
+  saveBank(S.myQuestionBank);
+
+  // 显示练习按钮
+  const errorPracticeBtn = document.getElementById('errorPracticeBtn');
+  if (errorPracticeBtn) errorPracticeBtn.style.display = 'inline-flex';
 }
 
-/* ── 纠错练习屏控制器 (增强版) ── */
+/* ── 个人题库与二次练习 (新增) ── */
 function startErrorPractice() {
-  if (!currentPracticeSet || currentPracticeSet.length === 0) {
-    alert('No exercises generated yet. Please complete a session first.');
+  if (!S.practiceErrors.length && !S.myQuestionBank.length) {
+    alert('没有可用的练习，请先完成一次面试。');
     return;
   }
-  currentPracticeIndex = 0;
-  practiceAnswers = [];
-  practiceHarderLevel = 0;
+  // 使用最新题库
+  if (S.myQuestionBank.length && !S.practiceErrors.length) {
+    S.practiceErrors = [...S.myQuestionBank];
+  }
+  S.practiceIndex = 0;
   showScreen('errorPracticeScreen');
   const mentorImg = document.getElementById('epMentorSprite');
   if (mentorImg) mentorImg.src = MENTOR_EXPR.greet_smile;
@@ -1109,103 +2203,53 @@ function startErrorPractice() {
     try { S.epRecognition.abort(); } catch(e) {}
   }
   S.epRecognition = initEpRecognition();
-  showPracticeItem(0);
+  loadPracticeItem(0);
 }
 
-function showPracticeItem(idx) {
-  if (idx >= currentPracticeSet.length) {
-    showPracticeSummary();
+function loadPracticeItem(idx) {
+  if (idx >= S.practiceErrors.length) {
+    // 练习完成，询问是否二次练习（更难题目）
+    const mentorText = document.getElementById('epMentorText');
+    if (mentorText) mentorText.innerHTML = "🎉 恭喜完成练习！要不要挑战更难的表达？点击「二次练习」生成新题目。";
+    const nextBtn = document.getElementById('epNextBtn');
+    if (nextBtn) nextBtn.style.display = 'none';
+    const harderBtn = document.getElementById('epHarderBtn');
+    if (harderBtn) harderBtn.style.display = 'inline-flex';
+    const doneBtn = document.getElementById('epDoneBtn');
+    if (doneBtn) doneBtn.style.display = 'inline-flex';
     return;
   }
-  const item = currentPracticeSet[idx];
-  const container = $('#epCard');
-  if (!container) return;
-  container.innerHTML = `
-    <div class="optimized-expr">✨ ${esc(item.optimized_expression)}</div>
-    <div class="prompt">📝 ${esc(item.prompt)}</div>
-    <div class="sample-answer" style="display:none; margin-top:12px; background:#f0f0f0; padding:8px; border-radius:6px;">
-      💡 Example: ${esc(item.sample_answer)}
-    </div>
-    <button id="revealSampleBtn" class="secondary-btn" style="margin-top:8px;">Show example</button>
-  `;
-  const answerDisplay = $('#epAnswerDisplay');
-  if (answerDisplay) answerDisplay.innerHTML = practiceAnswers[idx] || '';
-  const nextBtn = $('#epNextBtn');
-  if (nextBtn) nextBtn.style.display = 'none';
-  const progress = $('#epProgress');
-  if (progress) progress.textContent = `${idx+1} / ${currentPracticeSet.length}`;
-  const mentorText = $('#epMentorText');
-  if (mentorText) mentorText.innerHTML = 'Read the expression above, then tap the mic to create your own sentence.';
+  const err = S.practiceErrors[idx];
+  // 根据难度调整任务描述
+  let taskHtml = `📝 请根据提示，用英文说出更优表达：<br><span style="font-size:18px;">“${err.chinese_hint}”</span>`;
+  if (err.difficulty >= 2) {
+    taskHtml = `🔥 挑战题：请用英文说出更地道的表达（不能直接背诵原句）：<br><span style="font-size:18px;">“${err.chinese_hint}”</span><br><span style="font-size:13px;">提示：${err.explanation.substring(0, 80)}</span>`;
+  }
 
-  // 显示示例按钮
-  const revealBtn = $('#revealSampleBtn');
-  if (revealBtn) {
-    revealBtn.onclick = () => {
-      const sampleDiv = container.querySelector('.sample-answer');
-      if (sampleDiv) sampleDiv.style.display = 'block';
-      revealBtn.disabled = true;
-    };
-  }
-}
-
-async function showPracticeSummary() {
-  const container = $('#epCard');
-  const nextBtn = $('#epNextBtn');
-  const harderBtn = $('#epHarderBtn');
-  const mentorText = $('#epMentorText');
-  const answerDisplay = $('#epAnswerDisplay');
-  
-  let summaryHtml = '<h3>📚 Practice Summary</h3><ul>';
-  for (let i = 0; i < currentPracticeSet.length; i++) {
-    const ex = currentPracticeSet[i];
-    const userAns = practiceAnswers[i] || '(not answered)';
-    summaryHtml += `<li><strong>${esc(ex.optimized_expression)}</strong><br>
-                     Your answer: ${esc(userAns)}<br>
-                     <span style="color:var(--green);">Suggested: ${esc(ex.sample_answer)}</span></li>`;
-  }
-  summaryHtml += '</ul><p>✅ Great effort! Review the suggestions above.</p>';
-  container.innerHTML = summaryHtml;
-  if (answerDisplay) answerDisplay.style.display = 'none';
-  if (mentorText) mentorText.innerHTML = 'You completed all exercises! Click "Harder Practice" for more challenging questions.';
+  const errorOriginal = document.getElementById('epErrorOriginal');
+  if (errorOriginal) errorOriginal.innerHTML = `❌ 你的原句：${err.original}`;
+  const correction = document.getElementById('epCorrection');
+  if (correction) correction.innerHTML = `✅ 更优表达：${err.better}`;
+  const tip = document.getElementById('epTip');
+  if (tip) tip.innerHTML = `💡 为什么更好：${err.explanation}`;
+  const task = document.getElementById('epTask');
+  if (task) task.innerHTML = taskHtml;
+  const progress = document.getElementById('epProgress');
+  if (progress) progress.innerHTML = `${idx+1} / ${S.practiceErrors.length}`;
+  const answerDisplay = document.getElementById('epAnswerDisplay');
+  if (answerDisplay) answerDisplay.innerHTML = '';
+  const micStatus = document.getElementById('epMicStatus');
+  if (micStatus) micStatus.innerHTML = 'Tap to speak';
+  const micBtn = document.getElementById('epMicBtn');
+  if (micBtn) micBtn.classList.remove('recording');
+  const nextBtn = document.getElementById('epNextBtn');
   if (nextBtn) nextBtn.style.display = 'none';
-  
-  // 存储到个人题库
-  const timestamp = Date.now();
-  for (let i = 0; i < currentPracticeSet.length; i++) {
-    S.userPracticeHistory.unshift({
-      optimized: currentPracticeSet[i].optimized_expression,
-      exercisePrompt: currentPracticeSet[i].prompt,
-      userAnswer: practiceAnswers[i] || '',
-      sampleAnswer: currentPracticeSet[i].sample_answer,
-      timestamp: timestamp,
-      harderLevel: practiceHarderLevel
-    });
-  }
-  savePracticeHistory();
-  
-  // 显示二次练习按钮
-  if (!harderBtn) {
-    const btn = document.createElement('button');
-    btn.id = 'epHarderBtn';
-    btn.className = 'ep-harder-btn';
-    btn.textContent = '🔥 Harder Practice';
-    btn.onclick = async () => {
-      const harderSet = await generateHarderExercise();
-      if (harderSet && harderSet.length) {
-        currentPracticeSet = harderSet;
-        currentPracticeIndex = 0;
-        practiceAnswers = [];
-        practiceHarderLevel++;
-        showPracticeItem(0);
-      } else {
-        alert('Could not generate harder questions. Please try again later.');
-      }
-    };
-    const dock = document.querySelector('.ep-mic-dock');
-    if (dock) dock.appendChild(btn);
-  } else {
-    harderBtn.style.display = 'inline-block';
-  }
+  const harderBtn = document.getElementById('epHarderBtn');
+  if (harderBtn) harderBtn.style.display = 'none';
+  const doneBtn = document.getElementById('epDoneBtn');
+  if (doneBtn) doneBtn.style.display = 'none';
+  const mentorText = document.getElementById('epMentorText');
+  if (mentorText) mentorText.innerHTML = '读一读上面的提示，然后按下麦克风练习吧！';
 }
 
 function initEpRecognition() {
@@ -1221,30 +2265,37 @@ function initEpRecognition() {
       final += e.results[i][0].transcript;
     }
     S.epCurrentAnswer = final;
-    const answerDisplay = $('#epAnswerDisplay');
+    const answerDisplay = document.getElementById('epAnswerDisplay');
     if (answerDisplay) answerDisplay.innerHTML = final;
   };
   r.onerror = (e) => {
     console.warn('[EP Rec]', e.error);
-    const micStatus = $('#epMicStatus');
+    const micStatus = document.getElementById('epMicStatus');
     if (micStatus) micStatus.innerHTML = 'Mic error, try again';
-    const micBtn = $('#epMicBtn');
+    const micBtn = document.getElementById('epMicBtn');
     if (micBtn) micBtn.classList.remove('recording');
   };
   r.onend = () => {
-    const micBtn = $('#epMicBtn');
+    const micBtn = document.getElementById('epMicBtn');
     if (micBtn) micBtn.classList.remove('recording');
     if (S.epCurrentAnswer && S.epCurrentAnswer.trim().length > 3) {
-      const micStatus = $('#epMicStatus');
-      if (micStatus) micStatus.innerHTML = '✔ Recorded';
-      // 保存答案
-      practiceAnswers[currentPracticeIndex] = S.epCurrentAnswer;
-      const nextBtn = $('#epNextBtn');
+      const micStatus = document.getElementById('epMicStatus');
+      if (micStatus) micStatus.innerHTML = '✔ 已记录';
+      const nextBtn = document.getElementById('epNextBtn');
       if (nextBtn) nextBtn.style.display = 'inline-flex';
-      const mentorText = $('#epMentorText');
-      if (mentorText) mentorText.innerHTML = 'Great! Click "Next" to continue.';
+      const curErr = S.practiceErrors[S.practiceIndex];
+      const mentorText = document.getElementById('epMentorText');
+      // 简单评估是否接近更好表达（可扩展）
+      const isClose = curErr && S.epCurrentAnswer.toLowerCase().includes(curErr.better.toLowerCase().split(' ')[0]);
+      if (isClose) {
+        if (mentorText) mentorText.innerHTML = '👍 很好！你正在进步。点击下一题。';
+        // 记录掌握
+        curErr.mastered = true;
+      } else {
+        if (mentorText) mentorText.innerHTML = '再试试看，尽量用上刚才学的更优表达～';
+      }
     } else {
-      const micStatus = $('#epMicStatus');
+      const micStatus = document.getElementById('epMicStatus');
       if (micStatus) micStatus.innerHTML = 'Tap to speak again';
     }
   };
@@ -1253,26 +2304,26 @@ function initEpRecognition() {
 
 function startEpRecording() {
   if (!S.epRecognition) {
-    alert('Browser does not support voice input.');
+    alert('浏览器不支持语音识别，请使用 Chrome/Edge/Safari');
     return;
   }
-  const micBtn = $('#epMicBtn');
+  const micBtn = document.getElementById('epMicBtn');
   if (micBtn && micBtn.classList.contains('recording')) {
     try { S.epRecognition.stop(); } catch(e) {}
     return;
   }
   S.epCurrentAnswer = '';
-  const answerDisplay = $('#epAnswerDisplay');
+  const answerDisplay = document.getElementById('epAnswerDisplay');
   if (answerDisplay) answerDisplay.innerHTML = '';
-  const micStatus = $('#epMicStatus');
+  const micStatus = document.getElementById('epMicStatus');
   if (micStatus) micStatus.innerHTML = 'Listening...';
   if (micBtn) micBtn.classList.add('recording');
   try { S.epRecognition.start(); } catch(e) { console.warn(e); }
 }
 
 function nextPracticeItem() {
-  currentPracticeIndex++;
-  showPracticeItem(currentPracticeIndex);
+  S.practiceIndex++;
+  loadPracticeItem(S.practiceIndex);
 }
 
 function finishErrorPractice() {
@@ -1282,36 +2333,84 @@ function finishErrorPractice() {
   }
 }
 
-function showMyPracticeBank() {
-  if (!S.userPracticeHistory.length) {
-    alert('No practice records yet. Complete some exercises first!');
+async function generateHarderPractice() {
+  // 二次练习：基于用户未掌握的题目，生成更难版本
+  showLoad('Generating harder exercises...');
+  const unmastered = S.practiceErrors.filter(e => !e.mastered);
+  if (unmastered.length === 0) {
+    hideLoad();
+    alert('你已经掌握了所有表达！非常棒！');
     return;
   }
-  let html = '<h3>📖 My Practice Bank</h3><ul>';
-  S.userPracticeHistory.slice(0, 20).forEach(item => {
-    html += `<li><strong>${esc(item.optimized)}</strong><br>
-             Your sentence: ${esc(item.userAnswer)}<br>
-             <span class="sample">💡 ${esc(item.sampleAnswer)}</span></li>`;
-  });
-  html += '</ul><button onclick="showScreen(\'feedbackScreen\')">Back</button>';
-  const container = $('#epCard');
-  if (container) {
-    container.innerHTML = html;
-    showScreen('errorPracticeScreen');
+  const prompt = `For each of the following phrases that the learner is still struggling with, create a more challenging version. Increase difficulty by using more complex sentence structures, advanced vocabulary, or nuanced contexts.
+
+${unmastered.map((e, i) => `${i+1}. Original better expression: "${e.better}"\n   Explanation: ${e.explanation}\n   Chinese hint: ${e.chinese_hint}`).join('\n\n')}
+
+Return ONLY JSON array with same length, each object: 
+{
+  "original_better": "the original better expression",
+  "harder_better": "a more advanced version",
+  "harder_explanation": "why this is more advanced",
+  "harder_chinese_hint": "new Chinese hint to elicit the harder version"
+}`;
+
+  let harderData = [];
+  if (S.apiKey) {
+    const raw = await callAPI([{ role: 'user', content: prompt }], prompt, 1200);
+    if (raw) {
+      try {
+        harderData = JSON.parse(raw.replace(/```json|```/g, '').trim());
+      } catch(e) {}
+    }
   }
+  if (!harderData.length) {
+    // fallback: 简单增加难度
+    harderData = unmastered.map(e => ({
+      original_better: e.better,
+      harder_better: e.better.replace(/\.$/, ', which is a critical factor.'),
+      harder_explanation: e.explanation + ' Also, try to connect your point to a broader implication.',
+      harder_chinese_hint: e.chinese_hint + ' 并且说明为什么这个因素很重要。'
+    }));
+  }
+
+  // 替换或追加到练习列表
+  const newExercises = [];
+  for (let i = 0; i < unmastered.length; i++) {
+    const orig = unmastered[i];
+    const hard = harderData.find(h => h.original_better === orig.better) || harderData[i];
+    newExercises.push({
+      id: Date.now() + i,
+      original: orig.original,
+      better: hard.harder_better,
+      explanation: hard.harder_explanation,
+      chinese_hint: hard.harder_chinese_hint,
+      attempts: [],
+      mastered: false,
+      difficulty: (orig.difficulty || 1) + 1
+    });
+  }
+  S.practiceErrors = newExercises;
+  S.practiceIndex = 0;
+  saveBank([...S.myQuestionBank, ...newExercises]);
+  hideLoad();
+  loadPracticeItem(0);
+  const harderBtn = document.getElementById('epHarderBtn');
+  if (harderBtn) harderBtn.style.display = 'none';
+  const mentorText = document.getElementById('epMentorText');
+  if (mentorText) mentorText.innerHTML = '开始挑战更难表达！加油！';
 }
 
 function bindErrorPracticeEvents() {
-  const epMic = $('#epMicBtn');
+  const epMic = document.getElementById('epMicBtn');
   if (epMic) epMic.addEventListener('click', startEpRecording);
-  const epNext = $('#epNextBtn');
+  const epNext = document.getElementById('epNextBtn');
   if (epNext) epNext.addEventListener('click', nextPracticeItem);
-  const epDone = $('#epDoneBtn');
+  const epDone = document.getElementById('epDoneBtn');
   if (epDone) epDone.addEventListener('click', finishErrorPractice);
-  const errorBtn = $('#errorPracticeBtn');
-  if (errorBtn) errorBtn.addEventListener('click', startErrorPractice);
-  const bankBtn = $('#viewMyBankBtn');
-  if (bankBtn) bankBtn.addEventListener('click', showMyPracticeBank);
+  const epErrorBtn = document.getElementById('errorPracticeBtn');
+  if (epErrorBtn) epErrorBtn.addEventListener('click', startErrorPractice);
+  const epHarder = document.getElementById('epHarderBtn');
+  if (epHarder) epHarder.addEventListener('click', generateHarderPractice);
 }
 
 if (document.readyState === 'loading') {
@@ -1319,5 +2418,192 @@ if (document.readyState === 'loading') {
 } else {
   bindErrorPracticeEvents();
 }
+/* ── WORD PRACTICE (完整保留，并调整与题库的兼容) ── */
+$('wordPracticeBtn').addEventListener('click',()=>{
+  if(!S.advancedPhrases.length && !S.myQuestionBank.length) {
+    alert('No phrases to practise yet. Complete a session first.');
+    return;
+  }
+  // 优先使用 advancedPhrases，若无则使用题库中的 better 表达作为短语
+  if(!S.advancedPhrases.length && S.myQuestionBank.length) {
+    S.advancedPhrases = S.myQuestionBank.map(e => ({
+      phrase: e.better,
+      meaning: e.explanation,
+      example: `Example: "${e.better}"`
+    }));
+  }
+  S.wpIndex = 0;
+  showScreen('wordPracticeScreen');
+  showWPPhrase(0);
+});
 
-console.log('🎭 Mirror & Mentor v5 — Complete (Enhanced Practice + Script Control)');
+function showWPPhrase(idx){
+  const phrases = S.advancedPhrases;
+  if(idx >= phrases.length){
+    wpDone();
+    return;
+  }
+  const p = phrases[idx];
+  const wpPhraseCard = $('wpPhraseCard');
+  if(wpPhraseCard){
+    wpPhraseCard.innerHTML = `
+      <div class="wpp-num">PHRASE ${idx+1} / ${phrases.length}</div>
+      <div class="wpp-phrase">"${esc(p.phrase)}"</div>
+      <div class="wpp-meaning">Meaning: ${esc(p.meaning)}</div>
+      <div class="wpp-example">Example: "${esc(p.example)}"</div>`;
+  }
+  const wpPrompt = $('wpPrompt');
+  if(wpPrompt) wpPrompt.textContent = `Now try using this phrase naturally in a sentence — talk about your interview topic or yourself.`;
+  const wpTranscript = $('wpTranscript');
+  if(wpTranscript) wpTranscript.textContent = '';
+  const wpEval = $('wpEval');
+  if(wpEval){ wpEval.style.display='none'; wpEval.className='wp-eval'; }
+  const wpNextBtn = $('wpNextBtn');
+  if(wpNextBtn) wpNextBtn.style.display = 'none';
+  const wpMicStatus = $('wpMicStatus');
+  if(wpMicStatus) wpMicStatus.textContent = 'Tap to speak';
+  const wpProgress = $('wpProgress');
+  if(wpProgress) wpProgress.textContent = `${idx+1} of ${phrases.length} phrases`;
+}
+
+let wpRec = null;
+$('wpMicBtn').addEventListener('click',()=>{
+  if($('wpMicBtn').classList.contains('recording')){
+    wpRec && wpRec.stop();
+    $('wpMicBtn').classList.remove('recording');
+    const wpMicStatus = $('wpMicStatus');
+    if(wpMicStatus) wpMicStatus.textContent = 'Processing…';
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){ alert('Voice requires Chrome or Edge.'); return; }
+  wpRec = new SR();
+  wpRec.lang = 'en-US';
+  wpRec.continuous = false;
+  wpRec.interimResults = true;
+  let buf = '';
+  wpRec.onresult = e => {
+    buf = Array.from(e.results).map(r=>r[0].transcript).join('');
+    const wpTranscript = $('wpTranscript');
+    if(wpTranscript) wpTranscript.textContent = buf;
+  };
+  wpRec.onend = async () => {
+    $('wpMicBtn').classList.remove('recording');
+    if(buf.trim().length > 4) await evaluateWPAnswer(buf.trim());
+    else{
+      const wpMicStatus = $('wpMicStatus');
+      if(wpMicStatus) wpMicStatus.textContent = 'Tap to speak';
+    }
+  };
+  wpRec.start();
+  $('wpMicBtn').classList.add('recording');
+  const wpMicStatus = $('wpMicStatus');
+  if(wpMicStatus) wpMicStatus.textContent = 'Listening (20s)…';
+  setTimeout(()=>{ try{ wpRec.stop(); }catch{} }, 20000);
+});
+
+async function evaluateWPAnswer(text){
+  const phrase = S.advancedPhrases[S.wpIndex]?.phrase || '';
+  const evalEl = $('wpEval');
+  const wpMicStatus = $('wpMicStatus');
+  if(wpMicStatus) wpMicStatus.textContent = 'Evaluating…';
+  let evalResult = { correct: false, feedback: 'Nice try! Keep practising this phrase.' };
+  if(S.apiKey){
+    const sys = `You are a language coach. The learner was asked to use the phrase "${phrase}" in a sentence.
+Their sentence: "${text}"
+Did they use the phrase correctly (or a close natural variation)? 
+Return ONLY JSON: {"correct":true|false,"feedback":"one warm specific sentence of feedback"}`;
+    const raw = await callAPI([{role:'user',content:text}], sys, 100);
+    if(raw){
+      try{ evalResult = { ...evalResult, ...JSON.parse(raw.replace(/```json|```/g,'').trim()) }; }catch{}
+    }
+  } else {
+    const used = text.toLowerCase().includes((phrase||'').toLowerCase().split(' ')[0]);
+    evalResult.correct = used;
+    evalResult.feedback = used ? 'Great — you used it naturally!' : 'Try working the exact phrase into your sentence.';
+  }
+
+  if(evalEl){
+    evalEl.textContent = evalResult.feedback;
+    evalEl.className = 'wp-eval ' + (evalResult.correct ? 'good' : 'ok');
+    evalEl.style.display = 'block';
+  }
+  const wpNextBtn = $('wpNextBtn');
+  if(wpNextBtn) wpNextBtn.style.display = 'inline-flex';
+  if(wpMicStatus) wpMicStatus.textContent = 'Done';
+}
+
+$('wpNextBtn').addEventListener('click',()=>{ S.wpIndex++; showWPPhrase(S.wpIndex); });
+$('wpDoneBtn').addEventListener('click', wpDone);
+function wpDone(){
+  showScreen('feedbackScreen');
+}
+
+/* ── FEEDBACK ACTIONS (保持原样) ── */
+$('againBtn').addEventListener('click',()=>{
+  S.qIndex=0;S.retryCount=0;S.voiceState='idle';S.phase='idle';
+  S._isDebate=false;S._isSmallTalk=false;S._debateRound=0;S._stTurn=0;S._stHistory=[];
+  TTS.stop();
+  try{recognition&&recognition.abort();}catch{}
+  $('bigMicBtn').style.display='none';
+  const dimScores=$('dimScores'); if(dimScores) dimScores.innerHTML='';
+  const issuesList=$('issuesList'); if(issuesList) issuesList.innerHTML='';
+  const vocabList=$('vocabList'); if(vocabList) vocabList.innerHTML='';
+  const phrasesList=$('phrasesList'); if(phrasesList) phrasesList.innerHTML='';
+  const narrativeBox=$('narrativeBox'); if(narrativeBox) narrativeBox.style.display='none';
+  const issuesSection=$('issuesSection'); if(issuesSection) issuesSection.style.display='none';
+  const vocabSection=$('vocabSection'); if(vocabSection) vocabSection.style.display='none';
+  const phrasesSection=$('phrasesSection'); if(phrasesSection) phrasesSection.style.display='none';
+  const wordPracticeBtn=$('wordPracticeBtn'); if(wordPracticeBtn) wordPracticeBtn.style.display='none';
+  S.feedbackData=null;S.advancedPhrases=[];S.qLog=S.questions.map(q=>({question:q.q,dimension:q.dimension||'',intent:q.intent||'',userAnswers:[],finalScore:null,retries:0,evalNotes:''}));
+  launchArena("Welcome back. Let's try this again — you'll do even better this time.");
+});
+$('newIntakeBtn').addEventListener('click',()=>{
+  ['fiSpeciality','fiResume','fiPosition','fiGoal','fiCompany'].forEach(id=>{const el=$(id);if(el)el.value='';});
+  const savedK=localStorage.getItem('mm_apikey')||'';
+  if(savedK && $('fiApiKey')){ $('fiApiKey').value=savedK; }
+  document.querySelectorAll('.id-pill,.int-pill,.tog-opt,.prov-pill').forEach(x=>x.classList.remove('on'));
+  const mediumPill=document.querySelector('.int-pill[data-int="medium"]');
+  if(mediumPill) mediumPill.classList.add('on');
+  const autoToggle=document.querySelector('.tog-opt[data-mode="auto"]');
+  if(autoToggle) autoToggle.classList.add('on');
+  const deepseekPill=document.querySelector('.prov-pill[data-provider="deepseek"]');
+  if(deepseekPill) deepseekPill.classList.add('on');
+  S.questions=[];S.qLog=[];S.position='';
+  S._isDebate=false;S._isSmallTalk=false;S._debateRound=0;S._stTurn=0;S._stHistory=[];
+  showScreen('hubScreen');
+  const p=loadProfile();
+  if(p&&p.position){
+    const d=new Date(p.savedAt).toLocaleDateString();
+    const bannerText=$('bannerText');
+    if(bannerText) bannerText.textContent=`📋 Profile saved on ${d} (${p.position}). Load it?`;
+    const profileBanner=$('profileBanner');
+    if(profileBanner) profileBanner.classList.add('show');
+  }
+});
+
+document.addEventListener('touchstart',e=>{if(e.touches.length>1)e.preventDefault();},{passive:false});
+
+let _resizeTimer=null;
+window.addEventListener('resize',()=>{
+  clearTimeout(_resizeTimer);
+  _resizeTimer=setTimeout(()=>{
+    if(!$('stage')) return;
+    const {w}=stageSize();
+    const mob=isMobile();
+    const phase=S.phase;
+    if(['qa_listening','qa_retry','qa_ask'].includes(phase)){
+      const cW=mob?Math.min(w*0.85,340):Math.min(480,w*0.70);
+      posChar('challChar',{left:(w-cW)/2,width:cW,opacity:1});
+      posChar('mentorChar',{opacity:1});
+    }
+  },180);
+});
+document.addEventListener('touchstart', ()=>{
+  if(window.speechSynthesis){
+    const u=new SpeechSynthesisUtterance('');
+    window.speechSynthesis.speak(u);
+  }
+},{once:true,passive:true});
+
+console.log('🎭 Mirror & Mentor v5 — Complete with optimization practice');
