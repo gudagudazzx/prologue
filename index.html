@@ -11,7 +11,7 @@
 
 <!-- ════════════════════════════════════════
      SCREENS — only one is .active at a time
-════════════════════════════════════════ -->
+════════════════════════════════════════════ -->
 
 <!-- ── HUB ── -->
 <div id="hubScreen" class="screen active">
@@ -93,7 +93,6 @@
         <textarea class="fta" id="fiResume" rows="3" placeholder="Paste key highlights: internships, achievements, projects…"></textarea>
       </div>
     </div>
-
     <!-- Step 2: Interview details (interview-only) -->
     <div class="step-card interview-only" style="animation-delay:.18s">
       <div class="step-head">
@@ -103,18 +102,22 @@
           <div class="step-sub">The more specific, the sharper the questions.</div>
         </div>
       </div>
+
       <div class="fg">
         <label class="fl">Target Position / Role</label>
         <input class="fi" id="fiPosition" placeholder="e.g. Software Engineer Intern, Student Council…"/>
       </div>
+
       <div class="fg">
         <label class="fl">Your Goal for This Session</label>
         <textarea class="fta" id="fiGoal" rows="2" placeholder="e.g. I freeze on 'tell me about yourself'. I want to practise leadership questions."></textarea>
       </div>
+
       <div class="fg">
         <label class="fl">Company / Organisation <span style="font-size:13px;font-weight:400;color:var(--ink-dim)">(optional)</span></label>
         <input class="fi" id="fiCompany" placeholder="e.g. Google, McKinsey, City University…"/>
       </div>
+
       <div class="fg" style="margin-top: 12px;">
         <label class="fl">Your Resume <span style="font-size:13px;font-weight:400;color:var(--ink-dim)">(optional)</span></label>
         <input type="file" id="resumeFile" accept=".pdf,.doc,.docx" style="display:none;">
@@ -123,8 +126,19 @@
           <span style="font-size:12px; opacity:0.5;">📎</span>
         </div>
       </div>
-    </div>
 
+      <script>
+        document.getElementById('resumeFile').onchange = function() {
+          if(this.files && this.files[0]) {
+            const name = this.files[0].name;
+            const display = document.getElementById('fileNameDisplay');
+            display.textContent = "📄 " + name;
+            display.style.color = "var(--green)"; 
+            document.getElementById('resumeBtn').style.borderColor = "var(--green)";
+          }
+        };
+      </script>
+    </div>
     <!-- Step 3: Settings -->
     <div class="step-card" style="animation-delay:.26s">
       <div class="step-head"><div class="step-num">3</div>
@@ -189,7 +203,6 @@
 
 <!-- ── ARENA ── -->
 <div id="arenaScreen" class="screen">
-
   <!-- Top bar -->
   <div class="arena-topbar">
     <div class="arena-topbar-left">
@@ -205,51 +218,37 @@
 
   <!-- Body: left (chars + script) + right (answer + mic) -->
   <div id="arenaBody">
-
     <!-- ══ LEFT PANEL ══ -->
     <div id="leftPanel">
-
       <!-- Stage: BOTH interviewers overlap in center -->
       <div id="stage">
-
-        <!-- Friendly interviewer — LEFT seat, z-index 1 -->
         <div id="friendlyChar" class="char-unit" style="opacity:0">
           <img id="friendlySprite" class="char-sprite-img" src="" alt="Friendly Interviewer"/>
         </div>
-
-        <!-- Stern interviewer — RIGHT seat, z-index 2 (on top where they overlap) -->
         <div id="challChar" class="char-unit" style="opacity:0">
           <img id="challSprite" class="char-sprite-img" src="" alt="Stern Interviewer"/>
         </div>
-
-        <!-- Mentor overlay — covers whole stage when coaching -->
         <div id="mentorChar" class="char-unit mentor-overlay" style="opacity:0">
           <img id="mentorSprite" class="char-sprite-img" src="" alt="Mentor"/>
           <div class="mentor-dot" id="mentorDot"></div>
         </div>
-
       </div><!-- /stage -->
 
-      <!-- Dark speaker bar (name + pulsing dot) -->
       <div id="speakerBar">
         <span id="speakerNameText">⚡  INTERVIEWER</span>
         <span class="speaker-dot" id="speakerDot"></span>
       </div>
 
-      <!-- Script text -->
       <div id="scriptArea">
         <div class="debate-topic-card" id="debateTopicCard"></div>
         <div class="st-topics" id="stTopics"></div>
         <div id="vntbSpeaker" class="vntb-speaker" style="display:none"></div>
         <div id="vntbText" class="vntb-text"></div>
       </div>
-
     </div><!-- /leftPanel -->
 
     <!-- ══ RIGHT PANEL ══ -->
     <div id="rightPanel">
-
-      <!-- Answer bubble — user's spoken words build up here -->
       <div id="answerBubbleWrap">
         <div class="answer-bubble-label">Your Answer</div>
         <div id="answerBubble">
@@ -258,19 +257,15 @@
         </div>
       </div>
 
-      <!-- Mic dock -->
       <div id="micDock">
         <button id="bigMicBtn">🎙</button>
         <div id="micStatus">Tap to speak</div>
         <button id="skipBtn">Skip →</button>
       </div>
-
     </div><!-- /rightPanel -->
-
   </div><!-- /arenaBody -->
 
   <div id="vntextbox" style="display:none"><div></div><div></div></div>
-
 </div><!-- /arenaScreen -->
 
 <!-- ── FEEDBACK ── -->
@@ -281,33 +276,27 @@
       <div class="fb-sub" id="fbSub">Interview · 6 questions · Realistic Mode</div>
     </div>
 
-    <!-- Narrative -->
     <div class="narrative-box" id="narrativeBox" style="display:none">
       <div class="narrative-text" id="narrativeText"></div>
     </div>
 
-    <!-- Dimension scores -->
     <div class="dim-grid" id="dimScores"></div>
 
-    <!-- Issues -->
     <div class="issues-section" id="issuesSection" style="display:none">
       <div class="section-h">⚠ Issues to Address</div>
       <div id="issuesList"></div>
     </div>
 
-    <!-- Vocab upgrades -->
     <div class="vocab-section" id="vocabSection" style="display:none">
       <div class="section-h">📚 Vocabulary Upgrades</div>
       <div id="vocabList" class="vocab-grid"></div>
     </div>
 
-    <!-- Advanced phrases -->
     <div class="phrases-section" id="phrasesSection" style="display:none">
       <div class="section-h">🎓 Advanced Phrases to Practise</div>
       <div id="phrasesList" class="phrases-grid"></div>
     </div>
 
-    <!-- Dual feedback cards -->
     <div class="fb-cards">
       <div class="fb-card">
         <div class="fbc-header">
@@ -335,7 +324,8 @@
       <button class="fb-btn" id="wordPracticeBtn" style="display:none">🎓 Practise Phrases</button>
       <button class="fb-btn" id="againBtn">↩ Try Again</button>
       <button class="fb-btn fb-secondary" id="newIntakeBtn">✦ New Session</button>
-      <button class="fb-btn" id="errorPracticeBtn" style="display: none;">📖 纠错练习</button>
+      <button class="fb-btn" id="errorPracticeBtn" style="display: none;">📖 优化表达练习</button>
+      <button class="fb-btn" id="bankBtn" style="display: none;">📚 我的题库</button>
     </div>
   </div>
 </div>
@@ -358,20 +348,21 @@
   </div>
 </div>
 
-<!-- ── ERROR PRACTICE (纠错练习) ── -->
+<!-- ── ERROR PRACTICE (优化表达练习) ── -->
 <div id="errorPracticeScreen" class="screen">
   <div class="ep-wrap">
-    <!-- 左侧练习内容区 -->
     <div class="ep-left">
       <div class="ep-header">
-        <span class="ep-badge">📝 纠错练习 · 针对你的错误</span>
+        <span class="ep-badge">📝 表达优化练习 · 针对你的错误</span>
         <span id="epProgress" class="ep-progress">1 / 3</span>
       </div>
       <div id="epCard" class="ep-card">
-        <!-- 动态内容会由 JS 填充 -->
+        <div class="ep-error-original" id="epErrorOriginal">❌ 你的原句：...</div>
+        <div class="ep-correction" id="epCorrection">✅ 更优表达：...</div>
+        <div class="ep-tip" id="epTip">💡 为什么更好</div>
       </div>
       <div class="ep-prompt" id="epPrompt">
-        请用正确的表达造一个新句子，或者翻译下面的中文：
+        请根据中文提示，用英文说出更优表达：
       </div>
       <div class="ep-task" id="epTask"></div>
       <div class="ep-answer-area">
@@ -380,22 +371,30 @@
       </div>
     </div>
 
-    <!-- 右侧 Mentor 区 + 麦克风 -->
     <div class="ep-right">
       <div class="ep-mentor">
         <img id="epMentorSprite" class="ep-mentor-img" src="" alt="Mentor">
         <div class="ep-mentor-bubble" id="epMentorBubble">
-          <span id="epMentorText">我会帮你纠正刚刚犯的错误。读一读左边的提示，然后对着麦克风练习～</span>
+          <span id="epMentorText">我会帮你优化表达。读一读左边的提示，然后对着麦克风练习～</span>
         </div>
       </div>
       <div class="ep-mic-dock">
         <button id="epMicBtn" class="ep-mic-btn">🎙</button>
         <div id="epMicStatus" class="ep-mic-status">Tap to speak</div>
         <button id="epNextBtn" class="ep-next-btn" style="display: none;">➡ 下一题</button>
+        <button id="epHarderBtn" class="ep-harder-btn" style="display: none;">🔥 二次练习（更难）</button>
         <button id="epDoneBtn" class="ep-done-btn">✓ 完成练习</button>
-        <button id="viewMyBankBtn" class="ep-bank-btn" style="margin-left: 8px;">📚 我的题库</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ── 个人题库 (My Bank) 预留，后续可扩展 ── -->
+<div id="bankScreen" class="screen" style="display:none;">
+  <div class="bank-wrap">
+    <h2>📚 我的表达题库</h2>
+    <div id="bankList"></div>
+    <button onclick="showScreen('feedbackScreen')">返回</button>
   </div>
 </div>
 
@@ -405,9 +404,7 @@
   <div class="loading-msg" id="loadingMsg">Thinking…</div>
 </div>
 
-<!-- Scripts -->
 <script src="imgs.js"></script>
 <script src="script.js"></script>
-
 </body>
 </html>
