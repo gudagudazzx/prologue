@@ -131,6 +131,7 @@ const S={
   epCurrentExpected: '',
   myQuestionBank: [],
   scriptEnabled: true,
+  isGeneratingExercises: false,
 };
 
 let recognition = null;
@@ -1873,30 +1874,41 @@ async function generateFeedback(){
   showScreen('feedbackScreen');
   showLoad('Generating your detailed analysis…');
 
-  const position=S.scenario==='debate'?'Debate Session':S.scenario==='smalltalk'?'Small Talk':(S.position||'Interview Session');
-  const modeLabel=S.scenario==='debate'?'Debate':S.scenario==='smalltalk'?'Conversation':({gentle:'Gentle',medium:'Realistic',hardcore:'Hardcore'}[S.intensity]||'');
-  const countLabel=S.scenario==='debate'?S.qLog.length+' rounds':S.scenario==='smalltalk'?S.qLog.length+' turns':S.questions.length+' questions';
-  const fbSub=$('fbSub');
-  if(fbSub) fbSub.textContent=position+' · '+countLabel+' · '+modeLabel+' Mode';
+  // ========== 新增：立即显示优化表达练习按钮（并禁用） ==========
+  const errorPracticeBtn = document.getElementById('errorPracticeBtn');
+  if (errorPracticeBtn) {
+    errorPracticeBtn.style.display = 'inline-flex';
+    errorPracticeBtn.disabled = true;
+    errorPracticeBtn.title = '练习正在生成中，请稍后...';
+  }
+  S.isGeneratingExercises = true;
+  // ========== 新增结束 ==========
+
+  // 下面的代码是你原有的，不要改动（从 const position = ... 开始）
+  const position = S.scenario === 'debate' ? 'Debate Session' : (S.scenario === 'smalltalk' ? 'Small Talk' : (S.position || 'Interview Session'));
+  const modeLabel = S.scenario === 'debate' ? 'Debate' : (S.scenario === 'smalltalk' ? 'Conversation' : ({ gentle: 'Gentle', medium: 'Realistic', hardcore: 'Hardcore' }[S.intensity] || ''));
+  const countLabel = S.scenario === 'debate' ? S.qLog.length + ' rounds' : (S.scenario === 'smalltalk' ? S.qLog.length + ' turns' : S.questions.length + ' questions');
+  const fbSub = $('fbSub');
+  if (fbSub) fbSub.textContent = position + ' · ' + countLabel + ' · ' + modeLabel + ' Mode';
 
   const summaryLabel = S.scenario === 'debate' ? 'Round' : 'Q';
   let sessionSummary = 'No recorded exchanges.';
   if (S.qLog && S.qLog.length > 0) {
     sessionSummary = S.qLog.map((l, i) => {
       const questionText = l.question || '(No question recorded)';
-      const lastAnswer = (l.userAnswers && l.userAnswers.length) ? l.userAnswers[l.userAnswers.length-1] : '(no answer)';
+      const lastAnswer = (l.userAnswers && l.userAnswers.length) ? l.userAnswers[l.userAnswers.length - 1] : '(no answer)';
       const evalNote = l.evalNotes || '';
-      return `${summaryLabel}${i+1}: ${questionText}\n  Answer: "${lastAnswer}"\n  Notes: ${evalNote}`;
+      return `${summaryLabel}${i + 1}: ${questionText}\n  Answer: "${lastAnswer}"\n  Notes: ${evalNote}`;
     }).join('\n\n');
   }
 
-  const scenarioContext = S.scenario==='debate'
+  const scenarioContext = S.scenario === 'debate'
     ? 'debate coach (assess argument, evidence, rebuttal, vocabulary, fluency, confidence)'
-    : S.scenario==='smalltalk'
-    ? 'conversational English coach (assess naturalness, question-asking, warmth, vocabulary, fluency, listening)'
-    : 'interview coach (assess grammar, fluency, vocabulary, content, strategy, confidence)';
+    : S.scenario === 'smalltalk'
+      ? 'conversational English coach (assess naturalness, question-asking, warmth, vocabulary, fluency, listening)'
+      : 'interview coach (assess grammar, fluency, vocabulary, content, strategy, confidence)';
 
-  const detailSys=`You are an expert English ${scenarioContext} conducting a POST-SESSION analysis.
+  const detailSys = `You are an expert English ${scenarioContext} conducting a POST-SESSION analysis.
 
 Candidate Profile:\n${buildProfile()}
 
@@ -1937,10 +1949,10 @@ Return ONLY valid JSON (no markdown):
 }`;
 
   const [rJ, rC, rM] = await Promise.allSettled([
-    callAPI([{role:'user',content:`Full session:\n${sessionSummary}\n\nProvide full analysis JSON.`}], detailSys, 900),
-    callAPI([{role:'user',content:`Session:\n${sessionSummary}\n\nGive your frank interviewer's assessment. 3-4 sentences. Be specific.`}],
+    callAPI([{ role: 'user', content: `Full session:\n${sessionSummary}\n\nProvide full analysis JSON.` }], detailSys, 900),
+    callAPI([{ role: 'user', content: `Session:\n${sessionSummary}\n\nGive your frank interviewer's assessment. 3-4 sentences. Be specific.` }],
       `You are the interviewer who just ran a "${position}" session. Be honest and professional.`, 220),
-    callAPI([{role:'user',content:`Session:\n${sessionSummary}\n\nWrite your warm mentor letter. 3-4 sentences. Be specific and encouraging.`}],
+    callAPI([{ role: 'user', content: `Session:\n${sessionSummary}\n\nWrite your warm mentor letter. 3-4 sentences. Be specific and encouraging.` }],
       `You are the warm Mentor from this session. Write like a brilliant older sibling who wants them to succeed.`, 220),
   ]);
 
@@ -1952,11 +1964,11 @@ Return ONLY valid JSON (no markdown):
       const cleaned = rJ.value.replace(/```json|```/g, '').trim();
       const parsed = JSON.parse(cleaned);
       data = { ...data, ...parsed };
-    } catch(e) {
+    } catch (e) {
       console.warn('Failed to parse AI feedback JSON, using fallback');
     }
   }
-  
+
   const defaultDims = {
     grammar: { score: 70, note: 'Overall grammar is acceptable, but watch for tense consistency.' },
     fluency: { score: 65, note: 'Some hesitations and filler words.' },
@@ -2094,7 +2106,14 @@ Return ONLY valid JSON (no markdown):
       "You showed up and that matters more than you know. Your answers grew more detailed as the session went on — that's real growth. For next time: practice your 60-second introduction three times before you sleep tonight. You're closer than you think.";
   }
 
+  // ========== 生成练习（这会花几秒钟） ==========
   await generateOptimizationExercises(sessionSummary);
+  // ========== 生成完成后，启用按钮 ==========
+  if (errorPracticeBtn) {
+    errorPracticeBtn.disabled = false;
+    errorPracticeBtn.title = '';
+  }
+  S.isGeneratingExercises = false;
 }
 // 生成优化表达练习（包含多种近义词组/优化表达）
 async function generateOptimizationExercises(sessionSummary) {
@@ -2252,6 +2271,12 @@ function setEpMentorExpr(expr, duration = 2000) {
 }
 
 function startErrorPractice() {
+  // 如果正在生成练习，提示用户等待
+  if (S.isGeneratingExercises) {
+    alert('练习内容正在生成中，请稍后再点击。');
+    return;
+  }
+  // 如果没有练习数据，提示先完成面试
   if (!S.practiceErrors.length && !S.myQuestionBank.length) {
     alert('没有可用的练习，请先完成一次面试。');
     return;
@@ -2259,13 +2284,15 @@ function startErrorPractice() {
   if (S.myQuestionBank.length && !S.practiceErrors.length) {
     S.practiceErrors = [...S.myQuestionBank];
   }
+  // 重置每道题的重试计数
   S.practiceErrors.forEach(e => { e.retryCount = 0; e.attempts = []; });
   S.practiceIndex = 0;
   S.epRetryCount = 0;
   S.epWaitingForRetry = false;
   S.epCurrentExpected = '';
   showScreen('errorPracticeScreen');
-  setEpMentorExpr('greet_smile');
+  const mentorImg = document.getElementById('epMentorSprite');
+  if (mentorImg) mentorImg.src = MENTOR_EXPR.greet_smile;
   if (S.epRecognition) {
     try { S.epRecognition.abort(); } catch(e) {}
   }
