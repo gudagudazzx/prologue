@@ -1916,9 +1916,21 @@ Return ONLY valid JSON (no markdown):
   hideLoad();
 
   let data={dims:{},issues:[],vocab_upgrades:[],advanced_phrases:[],narrative:'',challenger_verdict:'',mentor_letter:''};
-  if(rJ.status==='fulfilled'&&rJ.value){
-    try{data={...data,...JSON.parse(rJ.value.replace(/```json|```/g,'').trim())};}catch{}
+if(rJ.status==='fulfilled'&&rJ.value){
+  // 添加这行：打印 AI 返回的原始文本
+  console.log('[DEBUG] Raw AI response (rJ.value):', rJ.value);
+  try{
+    const cleaned = rJ.value.replace(/```json|```/g,'').trim();
+    console.log('[DEBUG] Cleaned JSON string:', cleaned);
+    const parsed = JSON.parse(cleaned);
+    console.log('[DEBUG] Parsed data:', parsed);
+    data={...data,...parsed};
+  } catch(e){
+    console.error('[DEBUG] JSON parse error:', e);
   }
+}
+// 添加这行：打印最终使用的 data 对象
+console.log('[DEBUG] Final data object:', data);
   S.feedbackData=data;
   S.advancedPhrases=data.advanced_phrases||[];
 
