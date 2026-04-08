@@ -2117,7 +2117,7 @@ async function generateOptimizationExercises(sessionSummary) {
 
   const prompt = `const prompt = You are an expert English coach. Based on the conversation, create 3 DIFFICULT translation exercises.
   IMPORTANT: Each exercise must be:
-  1. A COMPLEX Chinese sentence (15-30 words) that requires advanced/essential grammar
+  1. A COMPLEX Chinese sentence (10-20 words) that requires advanced/essential grammar
   2. MUST include one specific advanced phrase in parentheses that the user must use
   3. The sentence should test: sentence structure, collocations, and the target phrase
   Example format:
