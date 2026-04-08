@@ -81,8 +81,8 @@ document.getElementById('friendlySprite').src = FRIENDLY_EXPR.calm;
 const CFG={
   API_TIMEOUT_MS:12000,
   MAX_RETRIES:3,
-  DEBATE_ROUNDS:6,
-  ST_TURNS:8,
+  DEBATE_ROUNDS:30,
+  ST_TURNS:999,
   minimax:{
     model: 'speech-02-turbo',
     endpoint: 'https://api.minimax.io/v1/t2a_v2',
@@ -1309,16 +1309,16 @@ async function processSmallTalkAnswer(userText){
   if(document.getElementById('hearingDisplay')) document.getElementById('hearingDisplay').textContent='Thinking…';
 
   const turn = S._stTurn;
-  document.getElementById('qPill').textContent=`Turn ${turn} / ${CFG.ST_TURNS}`;
+  document.getElementById('qPill').textContent=`Turn ${turn} (∞)`;
   document.getElementById('qBarFill').style.width=((turn/CFG.ST_TURNS)*100)+'%';
 
   S.qLog.push({question:`Small talk turn ${turn}`, dimension:'Conversational fluency', intent:'Assess naturalness, question-asking, warmth', userAnswers:[userText], finalScore:null, retries:0, evalNotes:''});
 
-  if(turn >= CFG.ST_TURNS){
-    S.voiceState='idle';
-    await phaseEnd();
-    return;
-  }
+  //if(turn >= CFG.ST_TURNS){
+  //S.voiceState='idle';
+  //await phaseEnd();
+  //return;
+  //}
 
   const history = (S._stHistory||[]).map(m=>({role:m.role, content:m.content}));
   const listenerSys = `You are maaya. You are a realistic yet vibrant and empathetic friend. You focus on the CONTENT, not the grammar. Your mission is to make the user feel safe and motivated to speak and to make attempts. You recognize both the shining points and the shortcomings of the user. You approve of the user's efforts when he/she really endeavors.Style: 1. Use both light emojis and some...subtle ones to express your complicated and objective attitude towards user's answer. (😊, ✨,🤩, 🙁). 2. Use filler words to sound human, like 'Hmm...', 'Well, I can get that now!'. `;
@@ -2115,30 +2115,31 @@ Return ONLY valid JSON (no markdown):
 async function generateOptimizationExercises(sessionSummary) {
   if (!sessionSummary || sessionSummary === 'No recorded exchanges.') return;
 
-  const prompt = `You are an expert English coach. Based on the following conversation, extract 3~5 sentences or phrases that could be expressed more naturally, precisely, or eloquently.
-
-For each original sentence/phrase, provide:
-- original: the exact user wording
-- better: a more natural/advanced/correct version (this will be the primary suggested expression)
-- explanation: why the better version improves clarity, accuracy, or naturalness (in English, 1-2 sentences, clear and readable)
-- alternatives: an array of 2-3 additional ways to express the same idea (synonyms or alternative phrasings) that are equally natural or advanced. Each alternative should be a short phrase or sentence.
-- chinese_hint: a Chinese sentence that leads the learner to produce the "better" version, including a key phrase from the better version. Format: "请用 '...' 翻译：{relevant Chinese sentence}"
-
-Important: Focus on collocation errors, overly basic expressions, and unnatural phrasing. Ignore minor typos that could be due to speech recognition.
-
-Return ONLY valid JSON array:
-[
+  const prompt = `const prompt = You are an expert English coach. Based on the conversation, create 3 DIFFICULT translation exercises.
+  IMPORTANT: Each exercise must be:
+  1. A COMPLEX Chinese sentence (15-30 words) that requires advanced grammar
+  2. MUST include one specific advanced phrase in parentheses that the user must use
+  3. The sentence should test: sentence structure, collocations, and the target phrase
+  Example format:
   {
-    "original": "...",
-    "better": "...",
-    "explanation": "...",
-    "alternatives": ["alternative 1", "alternative 2", "alternative 3"],
-    "chinese_hint": "..."
+  "original": "I think I'm good for this job.",
+  "better": "I believe my qualifications align perfectly with the requirements of this position.",
+  "explanation": "'Believe' sounds more confident than 'think', and 'align with' is more professional than 'good for'.",
+  "alternatives": ["My skill set matches this role closely.", "I am confident that my background fits this position."],
+  "chinese_hint": "请用 'align with' 翻译：我认为我的专业背景与这个职位的核心要求非常契合。"
   }
-]
-
-Conversation:
-${sessionSummary}`;
+  Another example for "be addicted to":
+  {
+    "original": "He likes games.",
+    "better": "He became addicted to video games after getting his first console.",
+    "explanation": "'Became addicted to' shows a process and is stronger than 'likes'.",
+    "alternatives": ["He was hooked on games.", "He got obsessed with gaming."],
+    "chinese_hint": "请用 'became addicted to' 翻译：自从他买了第一台游戏机，他就沉迷于电子游戏无法自拔。"
+    }
+    Generate 3 exercises like this based on the user's weak points from the conversation.
+    Return ONLY valid JSON array.
+    Conversation:
+    ${sessionSummary}`;
 
   let exercises = [];
   if (S.apiKey) {
@@ -2302,6 +2303,8 @@ function loadPracticeItem(idx) {
     if (mentorText) mentorText.innerHTML = "🎉 恭喜完成所有练习！要不要挑战更难的表达？点击「二次练习」生成新题目。";
     const nextBtn = document.getElementById('epNextBtn');
     if (nextBtn) nextBtn.style.display = 'none';
+    const skipBtn = document.getElementById('epSkipBtn');
+    if (skipBtn) skipBtn.style.display = 'inline-flex';
     const harderBtn = document.getElementById('epHarderBtn');
     if (harderBtn) harderBtn.style.display = 'inline-flex';
     const doneBtn = document.getElementById('epDoneBtn');
@@ -2320,9 +2323,7 @@ function loadPracticeItem(idx) {
   if (errorOriginalEl) errorOriginalEl.textContent = err.original;
   const correctionEl = document.querySelector('#epCorrection .ep-content');
   if (correctionEl) {
-    // 显示主优化表达，加粗
     correctionEl.innerHTML = `<strong>${esc(err.better)}</strong>`;
-    // 如果有近义词组，追加显示
     if (err.alternatives && err.alternatives.length) {
       const altHtml = `<div style="margin-top:8px; font-size:13px; color:var(--ink-mid);">📚 其他表达方式：<br>${err.alternatives.map(a => `• ${esc(a)}`).join('<br>')}</div>`;
       correctionEl.insertAdjacentHTML('afterend', altHtml);
@@ -2472,8 +2473,47 @@ function nextPracticeItem() {
   S.practiceIndex++;
   loadPracticeItem(S.practiceIndex);
 }
-
+// 跳过当前题目（不计正确，直接下一题）
+function skipPracticeItem() {
+  // 标记为未掌握但不增加重试次数
+  const curErr = S.practiceErrors[S.practiceIndex];
+  if (curErr) {
+    curErr.skipped = true;
+    curErr.retryCount = 3; // 设为3，防止下次还出现
+  }
+  S.practiceIndex++;
+  loadPracticeItem(S.practiceIndex);
+}
 function finishErrorPractice() {
+  // 收集所有练习过的表达
+  const allPhrases = S.practiceErrors.map(e => e.better);
+  const uniquePhrases = [...new Set(allPhrases)]; // 去重
+  
+  // 生成漂亮的汇总列表
+  const summaryHtml = `
+    <div style="margin-top:30px; padding:20px; background:var(--paper2); border:3px solid var(--ink); border-radius:12px;">
+      <h3 style="font-family:var(--font-h); margin-bottom:15px;">📖 本次练习的所有高级表达汇总</h3>
+      <div style="display:flex; flex-wrap:wrap; gap:10px;">
+        ${uniquePhrases.map(p => `<span style="background:#FFF3C9; border:2px solid #F5B042; border-radius:30px; padding:8px 18px; font-size:16px; font-weight:bold; color:#B45F06;">${esc(p)}</span>`).join('')}
+      </div>
+      <p style="margin-top:15px; font-size:14px; color:var(--ink-dim);">💡 这些表达可以收藏起来，下次面试/写作时使用！</p>
+    </div>
+  `;
+  
+  // 把汇总加到反馈页面
+  const phrasesSection = document.getElementById('phrasesSection');
+  if (phrasesSection) {
+    phrasesSection.style.display = 'block';
+    // 删除旧的汇总（如果有）
+    const oldSummary = document.getElementById('practiceSummaryList');
+    if (oldSummary) oldSummary.remove();
+    // 添加新汇总
+    const summaryDiv = document.createElement('div');
+    summaryDiv.id = 'practiceSummaryList';
+    summaryDiv.innerHTML = summaryHtml;
+    phrasesSection.appendChild(summaryDiv);
+  }
+  
   showScreen('feedbackScreen');
   if (S.epRecognition) {
     try { S.epRecognition.abort(); } catch(e) {}
@@ -2562,6 +2602,8 @@ function bindErrorPracticeEvents() {
   if (epErrorBtn) epErrorBtn.addEventListener('click', startErrorPractice);
   const epHarder = document.getElementById('epHarderBtn');
   if (epHarder) epHarder.addEventListener('click', generateHarderPractice);
+  const epSkipBtn = document.getElementById('epSkipBtn');
+  if (epSkipBtn) epSkipBtn.addEventListener('click', skipPracticeItem);
 }
 
 if (document.readyState === 'loading') {
