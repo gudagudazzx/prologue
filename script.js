@@ -1946,9 +1946,9 @@ Return ONLY valid JSON (no markdown):
 
   const [rJ, rC, rM] = await Promise.allSettled([
     callAPI([{ role: 'user', content: `Full session:\n${sessionSummary}\n\nProvide full analysis JSON.` }], detailSys, 900),
-    callAPI([{ role: 'user', content: `Session:\n${sessionSummary}\n\nGive your frank interviewer's assessment. 3-4 sentences. Be specific.` }],
+    callAPI([{ role: 'user', content: `Session:\n${sessionSummary}\n\nGive your frank interviewer's assessment. 2-3 sentences. Be specific.` }],
       `You are the interviewer who just ran a "${position}" session. Be honest and professional.`, 220),
-    callAPI([{ role: 'user', content: `Session:\n${sessionSummary}\n\nWrite your warm mentor letter. 3-4 sentences. Be specific and encouraging.` }],
+    callAPI([{ role: 'user', content: `Session:\n${sessionSummary}\n\nWrite your warm mentor letter. 2-3 sentences. Be specific and encouraging.` }],
       `You are the warm Mentor from this session. Write like a brilliant older sibling who wants them to succeed.`, 220),
   ]);
 
@@ -2117,7 +2117,7 @@ async function generateOptimizationExercises(sessionSummary) {
 
   const prompt = `const prompt = You are an expert English coach. Based on the conversation, create 3 DIFFICULT translation exercises.
   IMPORTANT: Each exercise must be:
-  1. A COMPLEX Chinese sentence (15-30 words) that requires advanced grammar
+  1. A COMPLEX Chinese sentence (15-30 words) that requires advanced/essential grammar
   2. MUST include one specific advanced phrase in parentheses that the user must use
   3. The sentence should test: sentence structure, collocations, and the target phrase
   Example format:
@@ -2321,14 +2321,33 @@ function loadPracticeItem(idx) {
   // 更新左侧内容
   const errorOriginalEl = document.querySelector('#epErrorOriginal .ep-content');
   if (errorOriginalEl) errorOriginalEl.textContent = err.original;
+  
   const correctionEl = document.querySelector('#epCorrection .ep-content');
-  if (correctionEl) {
-    correctionEl.innerHTML = `<strong>${esc(err.better)}</strong>`;
-    if (err.alternatives && err.alternatives.length) {
-      const altHtml = `<div style="margin-top:8px; font-size:13px; color:var(--ink-mid);">📚 其他表达方式：<br>${err.alternatives.map(a => `• ${esc(a)}`).join('<br>')}</div>`;
-      correctionEl.insertAdjacentHTML('afterend', altHtml);
-    }
-  }
+if (correctionEl) {
+  // 清空旧内容
+  correctionEl.innerHTML = '';
+  
+  // 收集所有表达：better + alternatives
+  let allExpressions = [err.better, ...(err.alternatives || [])];
+  // 去重（避免重复）
+  allExpressions = [...new Set(allExpressions)];
+  
+  // 生成列表HTML：关键表达（better）加粗，其他正常
+  const listHtml = `
+  <div style="background:#D0F0F0; border:2px solid #0D7377; border-radius:12px; padding:16px; margin:10px 0;">
+    <div style="font-family:var(--font-b); margin-bottom:12px; font-weight:600; color:#0D7377;">✨ 推荐表达方式：</div>
+    <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+      ${allExpressions.map(expr => {
+        const isMain = (expr === err.better);
+        return `<span style="background:white; border:1px solid #5F9EA0; border-radius:30px; padding:8px 18px; ${isMain ? 'font-weight:bold; font-size:18px; background:#B2DFDB; border-width:2px; border-color:#0D7377;' : 'font-size:15px;'}">${isMain ? `★ ${esc(expr)}` : esc(expr)}</span>`;
+      }).join('')}
+    </div>
+    <div style="margin-top:12px; font-size:13px; color:#1A6B6B;">💡 点击麦克风练习使用这些表达</div>
+  </div>
+`;
+  
+  correctionEl.innerHTML = listHtml;
+}
   const tipEl = document.querySelector('#epTip .ep-content');
   if (tipEl) tipEl.textContent = err.explanation;
 
