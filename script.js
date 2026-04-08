@@ -2339,7 +2339,7 @@ if (correctionEl) {
     <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
       ${allExpressions.map(expr => {
         const isMain = (expr === err.better);
-        return `<span style="background:white; border:1px solid #5F9EA0; border-radius:30px; padding:8px 18px; ${isMain ? 'font-weight:bold; font-size:14px; background:#E8F5E9; border-width:2px; border-color:#0D7377; color:#0D4A2A;' : 'font-size:14px; color:#1A5B3A;'}">${isMain ? `★ ${esc(expr)}` : esc(expr)}</span>`;
+        return `<span style="background:${isMain ? '#E8F5E9' : '#F5F5F5'}; border:1px solid ${isMain ? '#0D7377' : '#CCCCCC'}; border-radius:30px; padding:8px 18px; font-weight:${isMain ? 'bold' : 'normal'}; font-size:14px; color:#1A5B3A;">${isMain ? `★ ${esc(expr)}` : esc(expr)}</span>`;
       }).join('')}
     </div>
     <div style="margin-top:12px; font-size:13px; color:#1A6B6B;">💡 点击麦克风练习使用这些表达</div>
