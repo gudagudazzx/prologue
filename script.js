@@ -106,8 +106,9 @@ const CFG={
     hcCutoffMin:12000, hcCutoffMax:22000,
   },
 };
-let speechQueue = [];      // 存着还没说的话
-let isSpeaking = false;    // 是否正在说话中
+let speechQueue = [];
+let isSpeaking = false;
+let _typeTimer = null;  // 可能原来就有，没有就加上
 
 const S={
   scenario:'interview',
@@ -527,9 +528,8 @@ function hideVNTextbox(){
 }
 
 function showVNTextbox(text, mode, label, autoHide=true) {
-  // 把这次要显示的内容放进队列
   return new Promise((resolve) => {
-    speechQueue.push(async () => {
+    const task = async () => {
       const tb = $('#vntextbox');
       const sp = $('#vntbSpeaker');
       if(!tb||!sp) return;
@@ -568,22 +568,21 @@ function showVNTextbox(text, mode, label, autoHide=true) {
       }
       if(dot) dot.classList.remove('speaking');
       resolve();
-    });
+    };
 
-    // 如果当前没有在说话，就开始处理队列
+    speechQueue.push(task);
     if (!isSpeaking) {
       isSpeaking = true;
       (async () => {
         while (speechQueue.length) {
-          const task = speechQueue.shift();
-          await task();
+          const next = speechQueue.shift();
+          await next();
         }
         isSpeaking = false;
       })();
     }
   });
 }
-
 function showVNTextboxKeep(text, mode, label){
   return showVNTextbox(text, mode, label, false);
 }
