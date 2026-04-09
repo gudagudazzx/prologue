@@ -106,8 +106,7 @@ const CFG={
     hcCutoffMin:12000, hcCutoffMax:22000,
   },
 };
-let speechQueue = [];
-let isSpeaking = false;
+let lastSpeechPromise = Promise.resolve();
 
 const S={
   scenario:'interview',
@@ -527,60 +526,50 @@ function hideVNTextbox(){
 }
 
 function showVNTextbox(text, mode, label, autoHide=true) {
-  return new Promise((resolve) => {
-    const task = async () => {
-      const tb = $('#vntextbox');
-      const sp = $('#vntbSpeaker');
-      if(!tb||!sp) return;
+  // 把当前任务排队到上一个任务之后
+  const currentTask = async () => {
+    const tb = $('#vntextbox');
+    const sp = $('#vntbSpeaker');
+    if(!tb||!sp) return;
 
-      const ttsRole = TTS.roleForMode(mode);
-      const bar = $('#speakerBar');
-      const nameEl = $('#speakerNameText');
-      const dot = $('#speakerDot');
+    const ttsRole = TTS.roleForMode(mode);
+    const bar = $('#speakerBar');
+    const nameEl = $('#speakerNameText');
+    const dot = $('#speakerDot');
 
-      if(mode==='chall'){
-        const isDebate=S.scenario==='debate', isST=S.scenario==='smalltalk';
-        const barColor = isDebate?'var(--teal)':isST?'var(--lavender)':'var(--ink)';
-        const label2   = isDebate?'⚡  DEBATER':isST?'🌸  LISTENER':
-                         S._usingFriendly?'✦  INTERVIEWER':'⚡  INTERVIEWER';
-        if(bar)    bar.style.background = barColor;
-        if(nameEl) nameEl.textContent   = label2;
-      } else if(mode==='mentor'){
-        if(bar)    bar.style.background = 'var(--green)';
-        if(nameEl) nameEl.textContent   = '✨  MENTOR';
-      } else {
-        if(bar)    bar.style.background = 'var(--amber)';
-        if(nameEl) nameEl.textContent   = `💡  ${label||'MENTOR'}`;
-      }
-      if(dot) dot.classList.add('speaking');
-
-      const readPause = Math.max(800, text.length * 18);
-
-      TTS.stop();
-      clearTimeout(_typeTimer);
-      _typeText(text, null);
-      await TTS.speak(text, ttsRole);
-      revealAllText(text);
-      if(autoHide){
-        await sleep(readPause);
-        hideVNTextbox();
-      }
-      if(dot) dot.classList.remove('speaking');
-      resolve();
-    };
-
-    speechQueue.push(task);
-    if (!isSpeaking) {
-      isSpeaking = true;
-      (async () => {
-        while (speechQueue.length) {
-          const next = speechQueue.shift();
-          await next();
-        }
-        isSpeaking = false;
-      })();
+    if(mode==='chall'){
+      const isDebate=S.scenario==='debate', isST=S.scenario==='smalltalk';
+      const barColor = isDebate?'var(--teal)':isST?'var(--lavender)':'var(--ink)';
+      const label2   = isDebate?'⚡  DEBATER':isST?'🌸  LISTENER':
+                       S._usingFriendly?'✦  INTERVIEWER':'⚡  INTERVIEWER';
+      if(bar)    bar.style.background = barColor;
+      if(nameEl) nameEl.textContent   = label2;
+    } else if(mode==='mentor'){
+      if(bar)    bar.style.background = 'var(--green)';
+      if(nameEl) nameEl.textContent   = '✨  MENTOR';
+    } else {
+      if(bar)    bar.style.background = 'var(--amber)';
+      if(nameEl) nameEl.textContent   = `💡  ${label||'MENTOR'}`;
     }
-  });
+    if(dot) dot.classList.add('speaking');
+
+    const readPause = Math.max(800, text.length * 18);
+
+    TTS.stop();
+    clearTimeout(_typeTimer);
+    _typeText(text, null);
+    await TTS.speak(text, ttsRole);
+    revealAllText(text);
+    if(autoHide){
+      await sleep(readPause);
+      hideVNTextbox();
+    }
+    if(dot) dot.classList.remove('speaking');
+  };
+
+  // 链式排队：等上一个完成后再执行当前
+  lastSpeechPromise = lastSpeechPromise.then(() => currentTask());
+  return lastSpeechPromise;
 }
 function showVNTextboxKeep(text, mode, label){
   return showVNTextbox(text, mode, label, false);
@@ -1850,8 +1839,8 @@ async function phaseEnd(){
 $('endBtn').addEventListener('click',()=>{
   if(!confirm('End the session and see your results?')) return;
   
-  // 清空待播放队列
-  speechQueue = [];
+  // 中断当前链式队列：重新赋值为一个已完成的 Promise
+  lastSpeechPromise = Promise.resolve();
   // 停止正在播放的语音
   TTS.stop();
   // 隐藏气泡
@@ -1865,8 +1854,6 @@ $('endBtn').addEventListener('click',()=>{
     const micBtn = document.getElementById('bigMicBtn');
     if(micBtn) micBtn.classList.remove('recording');
   }
-  // 重置状态
-  isSpeaking = false;
   
   // 结束会话
   phaseEnd();
