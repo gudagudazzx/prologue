@@ -525,80 +525,73 @@ function hideVNTextbox(){
   TTS.stop();
 }
 
-function showVNTextbox(text, mode, label, autoHide=true) {
-  // 把当前任务排队到上一个任务之后
-  const currentTask = async () => {
-    const tb = $('#vntextbox');
-    const sp = $('#vntbSpeaker');
-    if(!tb||!sp) return;
+function showVNTextbox(text, mode, label, autoHide=true){
+  const tb = $('#vntextbox');
+  const sp = $('#vntbSpeaker');
+  if(!tb||!sp) return Promise.resolve();
 
-    const ttsRole = TTS.roleForMode(mode);
-    const bar = $('#speakerBar');
-    const nameEl = $('#speakerNameText');
-    const dot = $('#speakerDot');
+  const ttsRole = TTS.roleForMode(mode);
+  const bar = $('#speakerBar');
+  const nameEl = $('#speakerNameText');
+  const dot = $('#speakerDot');
 
-    if(mode==='chall'){
-      const isDebate=S.scenario==='debate', isST=S.scenario==='smalltalk';
-      const barColor = isDebate?'var(--teal)':isST?'var(--lavender)':'var(--ink)';
-      const label2   = isDebate?'⚡  DEBATER':isST?'🌸  LISTENER':
-                       S._usingFriendly?'✦  INTERVIEWER':'⚡  INTERVIEWER';
-      if(bar)    bar.style.background = barColor;
-      if(nameEl) nameEl.textContent   = label2;
-    } else if(mode==='mentor'){
-      if(bar)    bar.style.background = 'var(--green)';
-      if(nameEl) nameEl.textContent   = '✨  MENTOR';
-    } else {
-      if(bar)    bar.style.background = 'var(--amber)';
-      if(nameEl) nameEl.textContent   = `💡  ${label||'MENTOR'}`;
-    }
-    if(dot) dot.classList.add('speaking');
+  if(mode==='chall'){
+    const isDebate=S.scenario==='debate', isST=S.scenario==='smalltalk';
+    const barColor = isDebate?'var(--teal)':isST?'var(--lavender)':'var(--ink)';
+    const label2   = isDebate?'⚡  DEBATER':isST?'🌸  LISTENER':
+                     S._usingFriendly?'✦  INTERVIEWER':'⚡  INTERVIEWER';
+    if(bar)    bar.style.background = barColor;
+    if(nameEl) nameEl.textContent   = label2;
+  } else if(mode==='mentor'){
+    if(bar)    bar.style.background = 'var(--green)';
+    if(nameEl) nameEl.textContent   = '✨  MENTOR';
+  } else {
+    if(bar)    bar.style.background = 'var(--amber)';
+    if(nameEl) nameEl.textContent   = `💡  ${label||'MENTOR'}`;
+  }
+  if(dot) dot.classList.add('speaking');
 
-    const readPause = Math.max(800, text.length * 18);
+  const readPause = Math.max(800, text.length * 18);
 
+  return new Promise(resolve => {
     TTS.stop();
     clearTimeout(_typeTimer);
     _typeText(text, null);
-    await TTS.speak(text, ttsRole);
-    revealAllText(text);
-    if(autoHide){
-      await sleep(readPause);
-      hideVNTextbox();
-    }
-    if(dot) dot.classList.remove('speaking');
-  };
-
-  // 链式排队：等上一个完成后再执行当前
-  lastSpeechPromise = lastSpeechPromise.then(() => currentTask());
-  return lastSpeechPromise;
-}
-function showVNTextboxKeep(text, mode, label){
-  return showVNTextbox(text, mode, label, false);
-}
-
-function showChallBubble(text, autoHide=true){ return showVNTextbox(text,'chall',null,autoHide); }
-function hideChallBubble()    { hideVNTextbox(); }
-function showMentorBubble(text, autoHide=true){ return showVNTextbox(text,'mentor',null,autoHide); }
-function hideMentorBubble()   { hideVNTextbox(); }
-function showMentorHint(text, label, autoHide=true){ return showVNTextbox(text,'hint',label,autoHide); }
-function hideMentorHint()     { hideVNTextbox(); }
-
-/* ── API LAYER ── */
-async function callArtifactProxy(messages, systemPrompt, maxTok){
-  try{
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'anthropic-version':'2023-06-01',
-        'anthropic-dangerous-direct-browser-access':'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: maxTok||250,
-        system: systemPrompt,
-        messages: messages.filter(m=>m.role!=='system'),
-      })
+    TTS.speak(text, ttsRole).then(() => {
+      revealAllText(text);
+      if(autoHide){
+        setTimeout(() => { hideVNTextbox(); resolve(); }, readPause);
+      } else {
+        resolve();
+      }
+    }).catch(() => {
+      clearTimeout(_typeTimer);
+      const utt = TTS.createUtterance(text, ttsRole);
+      utt.onend = () => {
+        clearTimeout(_typeTimer);
+        revealAllText(text);
+        if(autoHide){
+          setTimeout(() => { hideVNTextbox(); resolve(); }, readPause);
+        } else {
+          resolve();
+        }
+      };
+      utt.onerror = () => {
+        clearTimeout(_typeTimer);
+        revealAllText(text);
+        if(autoHide){
+          setTimeout(() => { hideVNTextbox(); resolve(); }, readPause);
+        } else {
+          resolve();
+        }
+      };
+      _typeText(text, utt);
+      TTS.speakUtterance(utt);
     });
+    if(dot) dot.classList.remove('speaking');
+  });
+}
+
     if(!res.ok) return null;
     const d = await res.json();
     return d.content?.[0]?.text?.trim() || null;
@@ -1839,23 +1832,25 @@ async function phaseEnd(){
 $('endBtn').addEventListener('click',()=>{
   if(!confirm('End the session and see your results?')) return;
   
-  // 中断当前链式队列：重新赋值为一个已完成的 Promise
-  lastSpeechPromise = Promise.resolve();
-  // 停止正在播放的语音
+  // 1. 立即停止所有语音
   TTS.stop();
-  // 隐藏气泡
-  hideVNTextbox();
-  // 清除打字动画
+  // 2. 清除打字动画
   clearTimeout(_typeTimer);
-  // 停止录音
+  // 3. 隐藏气泡
+  hideVNTextbox();
+  // 4. 停止录音
   if(S.voiceState==='recording'){
     try{ recognition && recognition.abort(); }catch(e){}
     S.voiceState='idle';
     const micBtn = document.getElementById('bigMicBtn');
     if(micBtn) micBtn.classList.remove('recording');
   }
+  // 5. 清除所有定时器
+  clearTimeout(S.silTimer);
+  clearTimeout(S.maxTimer);
+  clearTimeout(S.hcCutTimer);
   
-  // 结束会话
+  // 6. 结束会话
   phaseEnd();
 });
 /* ════════════════════════════════════════════
