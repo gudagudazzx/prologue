@@ -106,6 +106,8 @@ const CFG={
     hcCutoffMin:12000, hcCutoffMax:22000,
   },
 };
+let speechQueue = [];      // 存着还没说的话
+let isSpeaking = false;    // 是否正在说话中
 
 const S={
   scenario:'interview',
@@ -524,68 +526,61 @@ function hideVNTextbox(){
   TTS.stop();
 }
 
-function showVNTextbox(text, mode, label, autoHide=true){
-  const tb=$('vntextbox');
-  const sp=$('vntbSpeaker');
-  if(!tb||!sp) return Promise.resolve();
+function showVNTextbox(text, mode, label, autoHide=true) {
+  // 把这次要显示的内容放进队列
+  return new Promise((resolve) => {
+    speechQueue.push(async () => {
+      const tb = $('#vntextbox');
+      const sp = $('#vntbSpeaker');
+      if(!tb||!sp) return;
 
-  const ttsRole = TTS.roleForMode(mode);
-  const bar=$('speakerBar');
-  const nameEl=$('speakerNameText');
-  const dot=$('speakerDot');
+      const ttsRole = TTS.roleForMode(mode);
+      const bar = $('#speakerBar');
+      const nameEl = $('#speakerNameText');
+      const dot = $('#speakerDot');
 
-  if(mode==='chall'){
-    const isDebate=S.scenario==='debate', isST=S.scenario==='smalltalk';
-    const barColor = isDebate?'var(--teal)':isST?'var(--lavender)':'var(--ink)';
-    const label2   = isDebate?'⚡  DEBATER':isST?'🌸  LISTENER':
-                     S._usingFriendly?'✦  INTERVIEWER':'⚡  INTERVIEWER';
-    if(bar)    bar.style.background = barColor;
-    if(nameEl) nameEl.textContent   = label2;
-  } else if(mode==='mentor'){
-    if(bar)    bar.style.background = 'var(--green)';
-    if(nameEl) nameEl.textContent   = '✨  MENTOR';
-  } else {
-    if(bar)    bar.style.background = 'var(--amber)';
-    if(nameEl) nameEl.textContent   = `💡  ${label||'MENTOR'}`;
-  }
-  if(dot) dot.classList.add('speaking');
+      if(mode==='chall'){
+        const isDebate=S.scenario==='debate', isST=S.scenario==='smalltalk';
+        const barColor = isDebate?'var(--teal)':isST?'var(--lavender)':'var(--ink)';
+        const label2   = isDebate?'⚡  DEBATER':isST?'🌸  LISTENER':
+                         S._usingFriendly?'✦  INTERVIEWER':'⚡  INTERVIEWER';
+        if(bar)    bar.style.background = barColor;
+        if(nameEl) nameEl.textContent   = label2;
+      } else if(mode==='mentor'){
+        if(bar)    bar.style.background = 'var(--green)';
+        if(nameEl) nameEl.textContent   = '✨  MENTOR';
+      } else {
+        if(bar)    bar.style.background = 'var(--amber)';
+        if(nameEl) nameEl.textContent   = `💡  ${label||'MENTOR'}`;
+      }
+      if(dot) dot.classList.add('speaking');
 
-  const readPause = Math.max(800, text.length * 18);
+      const readPause = Math.max(800, text.length * 18);
 
-  return new Promise(resolve => {
-    TTS.stop();
-    _typeText(text, null);
-    TTS.speak(text, ttsRole).then(() => {
+      TTS.stop();
+      clearTimeout(_typeTimer);
+      _typeText(text, null);
+      await TTS.speak(text, ttsRole);
       revealAllText(text);
       if(autoHide){
-        setTimeout(() => { hideVNTextbox(); resolve(); }, readPause);
-      } else {
-        resolve();
+        await sleep(readPause);
+        hideVNTextbox();
       }
-    }).catch(() => {
-      clearTimeout(_typeTimer);
-      const utt = TTS.createUtterance(text, ttsRole);
-      utt.onend = () => {
-        clearTimeout(_typeTimer);
-        revealAllText(text);
-        if(autoHide){
-          setTimeout(() => { hideVNTextbox(); resolve(); }, readPause);
-        } else {
-          resolve();
-        }
-      };
-      utt.onerror = () => {
-        clearTimeout(_typeTimer);
-        revealAllText(text);
-        if(autoHide){
-          setTimeout(() => { hideVNTextbox(); resolve(); }, readPause);
-        } else {
-          resolve();
-        }
-      };
-      _typeText(text, utt);
-      TTS.speakUtterance(utt);
+      if(dot) dot.classList.remove('speaking');
+      resolve();
     });
+
+    // 如果当前没有在说话，就开始处理队列
+    if (!isSpeaking) {
+      isSpeaking = true;
+      (async () => {
+        while (speechQueue.length) {
+          const task = speechQueue.shift();
+          await task();
+        }
+        isSpeaking = false;
+      })();
+    }
   });
 }
 
@@ -1856,13 +1851,28 @@ async function phaseEnd(){
 
 $('endBtn').addEventListener('click',()=>{
   if(!confirm('End the session and see your results?')) return;
-  clearTimeout(S.silTimer);clearTimeout(S.maxTimer);clearTimeout(S.hcCutTimer);
+  
+  // 清空待播放队列
+  speechQueue = [];
+  // 停止正在播放的语音
   TTS.stop();
-  if(S.voiceState==='recording'){try{recognition&&recognition.abort();}catch{}}
-  S.voiceState='idle';
+  // 隐藏气泡
+  hideVNTextbox();
+  // 清除打字动画
+  clearTimeout(_typeTimer);
+  // 停止录音
+  if(S.voiceState==='recording'){
+    try{ recognition && recognition.abort(); }catch(e){}
+    S.voiceState='idle';
+    const micBtn = document.getElementById('bigMicBtn');
+    if(micBtn) micBtn.classList.remove('recording');
+  }
+  // 重置状态
+  isSpeaking = false;
+  
+  // 结束会话
   phaseEnd();
 });
-
 /* ════════════════════════════════════════════
    反馈与练习生成 (修复评分 & 重构练习)
 ════════════════════════════════════════════ */
