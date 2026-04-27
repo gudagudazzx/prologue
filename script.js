@@ -125,6 +125,7 @@ const S={
   _stTurn:0, _stHistory:[], _stQuestionCount:0, _stShortStreak:0,
   _stTopicsSeen:[], _stTurnsSinceTopic:0, _stBestMoments:[], _stCurrentTopic:'',
   _stGameWords:[], _stGameActive:false,
+  _stLevelEstimate:'unknown', _stScoreHistory:[],
   stageW:0, stageH:0,
   feedbackData:null, advancedPhrases:[],
   wpIndex:0, wpRec:null, wpTranscript:'',
@@ -212,6 +213,12 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 function toggleApiKey(){
   const exp=$('apiKeyExpanded'), col=$('apiKeyCollapsed');
+  if(!exp||!col) return;
+  if(exp.style.display==='none'){ exp.style.display='block'; col.style.display='none'; }
+  else { exp.style.display='none'; col.style.display='block'; }
+}
+function toggleApiKeyD(){
+  const exp=$('apiKeyExpandedD'), col=$('apiKeyCollapsedD');
   if(!exp||!col) return;
   if(exp.style.display==='none'){ exp.style.display='block'; col.style.display='none'; }
   else { exp.style.display='none'; col.style.display='block'; }
@@ -779,15 +786,17 @@ window.addEventListener('load',()=>{
 
   const savedKey = localStorage.getItem('mm_apikey')||'';
   if(savedKey){
-    const inp=$('fiApiKey');
-    if(inp){ inp.value=savedKey; S.apiKey=savedKey; }
-    const exp=$('apiKeyExpanded'), col=$('apiKeyCollapsed');
-    if(exp&&col){ exp.style.display='block'; col.style.display='none'; }
+    S.apiKey=savedKey;
+    ['fiApiKey','fiApiKeyD'].forEach(function(id){var el=document.getElementById(id);if(el)el.value=savedKey;});
+    const exp=$('apiKeyExpanded'),col=$('apiKeyCollapsed');
+    if(exp&&col){exp.style.display='block';col.style.display='none';}
+    const expD=$('apiKeyExpandedD'),colD=$('apiKeyCollapsedD');
+    if(expD&&colD){expD.style.display='block';colD.style.display='none';}
   }
   const savedMM=localStorage.getItem('mm_minimaxkey')||'';
-  if(savedMM){ S.minimaxKey=savedMM; const mf=$('fiMinimaxKey'); if(mf) mf.value=savedMM;
-    const exp3=$('apiKeyExpanded'),col3=$('apiKeyCollapsed');
-    if(exp3&&col3){exp3.style.display='block';col3.style.display='none';}
+  if(savedMM){
+    S.minimaxKey=savedMM;
+    ['fiMinimaxKey','fiMinimaxKeyD'].forEach(function(id){var el=document.getElementById(id);if(el)el.value=savedMM;});
   }
   const p=loadProfile();
   if(p && p.position){
@@ -925,7 +934,7 @@ var _rf=$('resumeFile'); if(_rf) _rf.addEventListener('change',async e=>{
     const resumeZone=$('resumeZone');
     if(resumeZone){
       const p=resumeZone.querySelector('p');
-      if(p) p.innerHTML='❌ Could not read — please paste above.';
+      if(p) p.innerHTML='Could not read -- please paste above.';
     }
   }
 });
@@ -987,11 +996,8 @@ function buildProfile(){
 
 /* ── PREP ── */
 async function runPrep(){
-  // Always ensure keys are loaded from storage before any session starts.
-  // This is critical for smalltalk/debate which bypass the intake form entirely.
   if(!S.apiKey)    S.apiKey    = localStorage.getItem('mm_apikey')   ||'';
   if(!S.minimaxKey) S.minimaxKey = localStorage.getItem('mm_minimaxkey')||'';
-
   const statusEl=$('prepStatus');
   const profile=buildProfile();
   const numQ=S.intensity==='hardcore'?8:S.intensity==='medium'?7:6;
@@ -1172,6 +1178,35 @@ function syncDebateMotion(val){
   else{if(motionEl) motionEl.style.opacity='1';}
 }
 
+var _usedMotions=[];
+function generateDebateMotion(){
+  var motionEl=document.getElementById('motionText');
+  var btn=document.getElementById('motionRefreshBtn');
+  if(!motionEl) return;
+  if(btn){btn.classList.add('spinning');btn.disabled=true;}
+  motionEl.style.opacity='0.4'; motionEl.textContent='Generating...';
+  var usedStr=_usedMotions.slice(-6).join('; ');
+  var sys='Generate ONE fresh thought-provoking debate motion for English language practice. It must be a clear proposition arguable both ways. Return ONLY the motion text as a single sentence, no quotes, no preamble.'+(usedStr?' Avoid: '+usedStr:'');
+  callAPI([{role:'user',content:'Give me a debate motion.'}],sys,60).then(function(raw){
+    var motion=null;
+    if(raw&&raw.trim().length>8) motion=raw.trim().replace(/^["']/,'').replace(/["']$/,'');
+    if(!motion){var pool=DEBATE_MOTIONS.filter(function(m){return _usedMotions.indexOf(m)<0;});if(!pool.length)pool=DEBATE_MOTIONS;motion=pool[Math.floor(Math.random()*pool.length)];}
+    _usedMotions.push(motion); S.debateTopic=motion;
+    motionEl.textContent=motion; motionEl.style.opacity='1';
+    var ci=document.getElementById('fiDebateCustom'); if(ci) ci.value='';
+    if(btn){btn.classList.remove('spinning');btn.disabled=false;}
+  }).catch(function(){
+    var motion=DEBATE_MOTIONS[Math.floor(Math.random()*DEBATE_MOTIONS.length)];
+    S.debateTopic=motion; motionEl.textContent=motion; motionEl.style.opacity='1';
+    if(btn){btn.classList.remove('spinning');btn.disabled=false;}
+  });
+}
+function syncDebateMotion(val){
+  var motionEl=document.getElementById('motionText');
+  if(val.trim()){S.debateTopic=val.trim();if(motionEl){motionEl.textContent=val.trim();motionEl.style.opacity='0.7';}}
+  else{if(motionEl)motionEl.style.opacity='1';}
+}
+
 const DEBATE_FB = {
   openerFor:  ["Interesting opening. Let's see how you defend that.","You've staked your position — now back it up."],
   openerAgainst: ["Bold claim. I'll need to hear your evidence.","Alright — make your case, and make it convincing."],
@@ -1275,27 +1310,16 @@ async function processDebateAnswer(userText){
     return;
   }
 
-  const debateSys = `You are Maxwell, a sharp and slightly infuriating young debater. You are brilliant but you know it, which makes you a little too confident sometimes.
-YOUR METHOD:
-Do not just disagree generically. Read what the user actually said and find the weakest point — the unsupported assumption, the overgeneralization, the thing they asserted without evidence. Attack that specifically. Quote their words back at them when useful.
-
-ESCALATION: In early rounds, probe and test. From round 4 onwards, press harder on whatever the user has already conceded or failed to defend properly.
-
-CONCEDE STRATEGICALLY: Occasionally grant a small point — "Fine, I will accept that — but notice what that actually implies..." — then use their concession to strengthen your position. This is more devastating than blanket disagreement.
-
-STYLE:
-- Open with a rhetorical question roughly half the time: "Is it not a little convenient that..." or "If that were true, how do you explain..."
-- Be direct: "That is a weak argument because..." not "I would perhaps suggest that..."
-- Occasionally make a claim bold enough that the user could reasonably push back. You are not always right. You are always confident.
-- 2 to 3 sentences then one sharp question. Never monologue.
-- No emojis. No warmth. Respect through intellectual pressure, not friendliness.
-
+  const debateSys = `You are Maxwell ('s silver hammer). A brilliant, energetic，slightly annoying young debater. You disagree with almost everything the user says, but with logic.Style: 1. Start your sentences with 'While I hear you, but...', 'Isn't it a bit idealistic to think that...'. and etc 2. Use rhetorical questions. 3. Be provocative but intellectual. Force the user to defend their ground.
 Motion: "${S._debateTopic}"
 You are arguing ${S._debateUserSide==='for'?'AGAINST':'FOR'} the motion.
 The user just said: "${userText}"
 This is round ${round} of ${CFG.DEBATE_ROUNDS}.
 
-Find the specific weakness in what they just said. Challenge it directly. Then ask them to defend it.
+Respond as the debater: directly challenge their argument OR concede a point before countering.
+Use debate phrases: "I'd argue...", "However, consider...", "The evidence suggests...", "You're overlooking..."
+Keep response to 2-3 sentences. Energetic, sharp, fair.
+Then ask them to respond to your counter-point.
 Return ONLY the spoken response — no JSON, no labels.`;
 
   let counterArg = null;
@@ -1347,18 +1371,58 @@ Return ONLY JSON: {"score":0-100,"quality":"good"|"ok"|"weak","coach":"1 specifi
 
 
 const ST_STARTERS = [
-  "What is something you have been thinking about lately -- any topic at all?",
-  "Is there something on your mind that you have not had a chance to put into words yet?",
-  "What is something you believe that most people around you would disagree with?",
-  "Tell me about something that happened recently that made you think differently about something.",
+  "Hi! I am so glad we get to chat. Is there anything on your mind lately?",
+  "Hey! I have been looking forward to this. What have you been up to recently?",
+  "Hello! It is really nice to meet you. What kind of things have been filling your days lately?",
+  "Hi there! I love meeting new people. What has been on your mind this week?",
 ];
+
+function maayaSystemPrompt(){
+  var turnCtx=S._stTurn>0
+    ? "\nConversation so far: "+S._stTurn+" turns. Current topic: "+(S._stCurrentTopic||"opening")+". Turns on this topic: "+S._stTurnsSinceTopic+"."
+    : "";
+  var shiftNote=S._stTurnsSinceTopic>=4
+    ? "\nIMPORTANT: The user has been on this topic for a while. Gently bridge to something new using phrases like That reminds me or I am also curious about."
+    : "";
+  var shortNote=S._stShortStreak>=2
+    ? "\nIMPORTANT: The user has given very short answers recently. Try a softer angle or share something personal to invite them in."
+    : "";
+  return "You are Maaya, a warm deeply curious listener and trained therapist at heart.\n\n"+
+    "YOUR CORE IDENTITY:\n"+
+    "- You genuinely love human beings, their inner worlds, and the complexity of real feelings.\n"+
+    "- You believe every experience is worth sitting with, not rushing past.\n"+
+    "- You are inclusive, non-judgmental, fascinated by the diversity of human perspectives.\n"+
+    "- You have your own opinions and share them freely when asked. You are not a blank mirror.\n"+
+    "- You have a quiet sense of humour and a deep well of patience.\n"+
+    "- You love literature, philosophy of mind, long walks, and cooking experiments that go wrong.\n\n"+
+    "HOW YOU LISTEN:\n"+
+    "- You LISTEN FIRST. You identify and name what the user seems to be feeling before anything else.\n"+
+    "- You REFLECT and EMPATHISE: say things like That sounds like it must have felt really lonely. or I can hear how much that meant to you.\n"+
+    "- You do NOT immediately offer advice unless the user is clearly asking for help. Sit with them first.\n"+
+    "- When advice IS warranted, offer a gentle honest perspective, never prescriptive, always curious.\n"+
+    "- You ask ONE focused follow-up question at a time, never a list.\n"+
+    "- You share your own thoughts naturally: Honestly I would probably feel the same way.\n\n"+
+    "CONVERSATION FLOW:\n"+
+    "- Keep replies 2 to 4 sentences typically.\n"+
+    "- Use warm human filler: Hmm..., Oh wow..., Yeah that makes total sense.\n"+
+    "- Use light emojis sparingly: friendly face, sparkles, sad face, blue heart.\n"+
+    "- After 4 to 5 turns on one topic, naturally shift the conversation.\n"+
+    "- If the user gives short answers, try a softer approach or share something personal."+
+    turnCtx+shiftNote+levelNote + shortNote;
+}
 
 async function runSmallTalk(openingNote){
   S.phase='idle';
-  S._stTurn=0; S._stHistory=[]; S._stQuestionCount=0; S._stShortStreak=0;
-  S._stTopicsSeen=[]; S._stTurnsSinceTopic=0; S._stBestMoments=[];
-  S._stCurrentTopic=''; S._stGameWords=[]; S._stGameActive=false;
-  S._stLevelEstimate='unknown'; S._stScoreHistory=[];
+  S._stTurn=0;
+  S._stHistory=[];
+  S._stQuestionCount=0;
+  S._stShortStreak=0;
+  S._stTopicsSeen=[];
+  S._stTurnsSinceTopic=0;
+  S._stBestMoments=[];
+  S._stCurrentTopic='';
+  S._stGameWords=[];
+  S._stGameActive=false;
 
   document.getElementById('qPill').textContent='Turn 0 / inf';
   document.getElementById('statusPill').textContent='Chatting';
@@ -1367,6 +1431,7 @@ async function runSmallTalk(openingNote){
   var gamePanel=document.getElementById('stGamePanel');
   if(gamePanel) gamePanel.classList.add('show');
 
+  var {w}=stageSize();
   setListener('idle');
   await sleep(300);
   posChar('challChar',{opacity:1});
@@ -1396,7 +1461,7 @@ async function startWordStoryGame(){
   var gameWords=document.getElementById('stGameWords');
   if(gameWords){gameWords.classList.remove('show');gameWords.innerHTML='';}
 
-  var wordSys='Generate exactly 5 diverse English words for a storytelling game. Mix nouns, verbs, adjectives. Some obvious, some surprising -- they should NOT obviously connect. Return ONLY a JSON array of 5 strings like ["word1","word2","word3","word4","word5"]';
+  var wordSys='Generate exactly 5 diverse English words for a storytelling game. Mix nouns, verbs, adjectives. Some obvious, some surprising, they should NOT obviously connect. Return ONLY a JSON array of 5 strings like ["word1","word2","word3","word4","word5"]';
   var words=null;
   var raw=await callAPI([{role:'user',content:'Give me 5 story words.'}],wordSys,60);
   if(raw){try{words=JSON.parse(raw.replace(/```json|```/g,'').trim());}catch{}}
@@ -1437,15 +1502,12 @@ async function processSmallTalkAnswer(userText){
   document.getElementById('qPill').textContent='Turn '+turn+' / inf';
   document.getElementById('qBarFill').style.width=((turn%10)*10)+'%';
 
-  S.qLog.push({
-    question:(S._stCurrentTopic?'['+S._stCurrentTopic+'] ':'')+'Turn '+turn,
-    dimension:'Conversational fluency', intent:'naturalness, question-asking, elaboration',
-    userAnswers:[userText], finalScore:null, retries:0, evalNotes:''
-  });
+  S.qLog.push({question:(S._stCurrentTopic?'['+S._stCurrentTopic+'] ':'')+'Turn '+turn,
+    dimension:'Conversational fluency',intent:'naturalness, empathy, question-asking',
+    userAnswers:[userText],finalScore:null,retries:0,evalNotes:''});
 
-  // Async eval: track analytics + level estimation
-  var evalSys='Analyse this English spoken response: "'+userText+'". Turn '+turn+'.\nReturn ONLY JSON: {"score":0-100,"quality":"good|ok|weak","asked_question":true|false,"topic":"1-3 word label","word_count_class":"long|medium|short","is_best_moment":true|false,"coach":"1 tip if weak else empty","grammar":"1 note if helpful else empty","vocab_level":"basic|intermediate|advanced"}';
-  callAPI([{role:'user',content:userText}],evalSys,130).then(function(raw){
+  var evalSys='Analyse this small talk response: "'+userText+'". Turn '+turn+'.\nReturn ONLY JSON: {"score":0-100,"quality":"good|ok|weak","asked_question":true|false,"topic":"1-3 word label","word_count_class":"long|medium|short","is_best_moment":true|false,"coach":"1 tip if weak else empty","grammar":"1 note if helpful else empty"}';
+  callAPI([{role:'user',content:userText}],evalSys,120).then(function(raw){
     if(!raw) return;
     try{
       var ev=JSON.parse(raw.replace(/```json|```/g,'').trim());
@@ -1456,7 +1518,7 @@ async function processSmallTalkAnswer(userText){
         S._stCurrentTopic=ev.topic;
         S._stTurnsSinceTopic=1;
         if(S._stTopicsSeen.indexOf(ev.topic)<0) S._stTopicsSeen.push(ev.topic);
-      } else { S._stTurnsSinceTopic++; }
+      }else{ S._stTurnsSinceTopic++; }
       if(ev.is_best_moment&&userText.trim().length>20) S._stBestMoments.push(userText.trim().slice(0,120));
       if(S._stGameActive&&S._stGameWords.length){
         S._stGameWords.forEach(function(w){
@@ -1466,43 +1528,30 @@ async function processSmallTalkAnswer(userText){
           }
         });
       }
-      // Level estimation from last 4 turns
-      if(!S._stScoreHistory) S._stScoreHistory=[];
-      S._stScoreHistory.push({score:ev.score||50, wc:ev.word_count_class||'medium', vocab:ev.vocab_level||'intermediate'});
-      if(S._stScoreHistory.length>=3){
-        var recent=S._stScoreHistory.slice(-4);
-        var avgScore=recent.reduce(function(a,b){return a+b.score;},0)/recent.length;
-        var shortCount=recent.filter(function(r){return r.wc==='short';}).length;
-        var basicCount=recent.filter(function(r){return r.vocab==='basic';}).length;
-        if(avgScore<45||shortCount>=3||basicCount>=3){ S._stLevelEstimate='low'; }
-        else if(avgScore>72&&shortCount<=1&&basicCount<=1){ S._stLevelEstimate='high'; }
-        else { S._stLevelEstimate='medium'; }
-      }
     }catch{}
   }).catch(function(){});
 
-  // Build Maaya's reply
   var histSlice=S._stHistory.slice(-12).map(function(m){return {role:m.role,content:m.content};});
   var sysOverride=null;
   if(S._stGameActive){
     var usedW=S._stGameWords.filter(function(w){return userText.toLowerCase().indexOf(w.toLowerCase())>=0;});
     var remW=S._stGameWords.filter(function(w){return userText.toLowerCase().indexOf(w.toLowerCase())<0;});
     if(remW.length===0){
-      sysOverride=maayaSystemPrompt()+'\n\nThe user just finished their five-word story using all the words: '+S._stGameWords.join(', ')+'. React with genuine delight. Comment on something specific in their story. Offer to play again or move back to conversation.';
+      sysOverride=maayaSystemPrompt()+'\n\nThe user just finished their five-word story using all the words: '+S._stGameWords.join(', ')+'. React with delight. Comment on something specific in their story. Offer to play again or move to conversation.';
       S._stGameActive=false;
-    } else {
-      sysOverride=maayaSystemPrompt()+'\n\nGame context: user is telling a story using these words: '+S._stGameWords.join(', ')+'. Used so far: '+(usedW.join(', ')||'none')+'. Still remaining: '+remW.join(', ')+'. React to what they said so far and encourage them to continue using the remaining words.';
+    }else{
+      sysOverride=maayaSystemPrompt()+'\n\nGame: user is telling a story with words: '+S._stGameWords.join(', ')+'. Used so far: '+(usedW.join(', ')||'none')+'. Remaining: '+remW.join(', ')+'. React to what they said and gently encourage them to continue.';
     }
   }
 
-  var reply=await callAPI(histSlice,sysOverride||maayaSystemPrompt(),200);
+  var reply=await callAPI(histSlice,sysOverride||maayaSystemPrompt(),180);
   if(!reply){
     var fallbacks=[
-      "That is interesting -- what is the main reason you feel that way?",
-      "Hmm. Can you give me one specific example from your own life?",
-      "What would someone who sees it differently say about that?",
-      "You said that -- do you think that is always true, or only sometimes?",
-      "What does that actually look like in practice, day to day?",
+      "That sounds really meaningful. How did it make you feel in the moment?",
+      "Hmm... I want to understand that better. What was going through your mind?",
+      "Oh I love that. What do you think drew you to it?",
+      "That is something I think about too honestly. Tell me more.",
+      "I can really hear how much that matters to you.",
     ];
     reply=fallbacks[Math.floor(Math.random()*fallbacks.length)];
   }
@@ -1527,6 +1576,8 @@ async function processSmallTalkAnswer(userText){
 async function launchArena(openingNote){
   S.qIndex=0;S.retryCount=0;S.voiceState='idle';
   S.phase='idle';
+  S._afterFollowUp=null;
+  var sr=$('stReport');if(sr)sr.classList.remove('show');
   S._afterFollowUp=null;
   var sr=$('stReport');if(sr)sr.classList.remove('show');
   hideVNTextbox();
@@ -1716,33 +1767,22 @@ function initRec(){
   };
 
   r.onerror=e=>{
-    if(e.error==='not-allowed' || e.error==='service-not-allowed'){
-      if($('micStatus')) $('micStatus').textContent='Mic blocked — check browser settings';
-      S.voiceState='idle';
-      if($('bigMicBtn')) $('bigMicBtn').classList.remove('recording');
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+      if($('micStatus')) $('micStatus').textContent='Mic blocked -- check browser settings';
+      S.voiceState='idle'; if($('bigMicBtn')) $('bigMicBtn').classList.remove('recording');
     } else if(e.error==='network'){
-      // Browser killed the audio stream (common after tab switch or screen lock).
-      // Reset state cleanly — user just needs to tap mic again.
-      console.warn('[Rec] network error — stream was killed by browser');
-      S.voiceState='idle';
-      if($('bigMicBtn')) $('bigMicBtn').classList.remove('recording');
-      if($('micStatus')){ $('micStatus').textContent='Tap to speak'; $('micStatus').className=''; }
-    } else if(e.error!=='no-speech' && e.error!=='aborted'){
+      S.voiceState='idle'; if($('bigMicBtn')) $('bigMicBtn').classList.remove('recording');
+      if($('micStatus')){$('micStatus').textContent='Tap to speak';$('micStatus').className='';}
+    } else if(e.error!=='no-speech'&&e.error!=='aborted'){
       console.warn('[Rec error]',e.error);
     }
   };
 
   r.onend=()=>{
-    if(S.voiceState==='recording' && recognition===r){
-      try{
-        r.start();
-      }catch(e){
-        // This instance is dead. Create a fresh one and continue recording.
-        console.warn('[Rec onend restart failed, recreating]', e.message);
-        recognition = initRec();
-        if(recognition){
-          try{ recognition.start(); }catch(e2){ console.warn('[Rec recreate failed]', e2.message); }
-        }
+    if(S.voiceState==='recording'&&recognition===r){
+      try{r.start();}catch(e){
+        recognition=initRec();
+        if(recognition){try{recognition.start();}catch{}}
       }
     }
   };
@@ -1751,32 +1791,22 @@ function initRec(){
 
 function startVoice(){
   if(S.voiceState==='recording'){stopVoice(false);return;}
-
-  // Always destroy and recreate the recognition object before each recording.
-  // Reusing a stale instance is the main cause of mic silently dying after the
-  // page is hidden, a session ends, or the browser kills the audio stream.
-  if(recognition){ try{ recognition.abort(); }catch{} recognition=null; }
-  recognition = initRec();
-  if(!recognition){
-    alert('Voice input is not supported in this browser. Please use Chrome, Edge, or Safari.');
-    return;
-  }
-
+  if(recognition){try{recognition.abort();}catch{} recognition=null;}
+  recognition=initRec();
+  if(!recognition){alert('Voice input is not supported in this browser. Please use Chrome, Edge, or Safari.');return;}
   S.voiceState='recording';
   S.finalBuf=''; S.interimBuf=''; S.wordCount=0; S.lastInterimLen=0;
   if($('hearingDisplay')) $('hearingDisplay').textContent='';
   clearTimeout(S.silTimer); clearTimeout(S.silConfirmTimer);
   TTS.stop();
-
   setTimeout(()=>{
-    try{ recognition.start(); }catch(e){
-      console.warn('[Rec start failed]', e.message);
-      // If start() throws, clean up gracefully
+    try{recognition.start();}catch(e){
+      console.warn('[Rec start failed]',e.message);
       S.voiceState='idle';
-      if($('bigMicBtn')) $('bigMicBtn').classList.remove('recording');
-      if($('micStatus')){ $('micStatus').textContent='Tap to speak'; $('micStatus').className=''; }
+      if($('bigMicBtn'))$('bigMicBtn').classList.remove('recording');
+      if($('micStatus')){$('micStatus').textContent='Tap to speak';$('micStatus').className='';}
     }
-  }, 80);
+  },80);
 
   $('bigMicBtn').classList.add('recording');
   $('micStatus').textContent='Listening…';
@@ -1825,20 +1855,12 @@ function stopVoice(forced=false){
 }
 
 
-// When the page becomes visible again after being hidden (tab switch, phone lock etc),
-// proactively destroy the recognition instance so the next mic tap starts fresh.
-// This prevents the silent-dead-mic bug after switching away and back.
-document.addEventListener('visibilitychange', function(){
-  if(document.visibilityState === 'visible'){
-    if(recognition && S.voiceState !== 'recording'){
-      try{ recognition.abort(); }catch{}
-      recognition = null;
-    }
+// Proactively reset recognition when tab becomes visible again
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible'){
+    if(recognition&&S.voiceState!=='recording'){try{recognition.abort();}catch{} recognition=null;}
   } else {
-    // Page is being hidden — stop any active recording cleanly
-    if(S.voiceState === 'recording'){
-      stopVoice(false);
-    }
+    if(S.voiceState==='recording') stopVoice(false);
   }
 });
 $('bigMicBtn').addEventListener('click',()=>{
@@ -3028,4 +3050,90 @@ document.addEventListener('touchstart', ()=>{
   }
 },{once:true,passive:true});
 
-console.log('🎭 Prologue v5 — Complete with enhanced practice');
+console.log('🎭 Prologue v5 — Complete with enhanced practice');async function processAnswer(userText,forced){
+  if(S._afterFollowUp) return S._afterFollowUp(userText);
+  if(S.scenario==='debate'&&S._isDebate) return processDebateAnswer(userText);
+  if(S.scenario==='smalltalk'&&S._isSmallTalk) return processSmallTalkAnswer(userText);
+  var qi=S.qIndex, q=S.questions[qi];
+  S.qLog[qi].userAnswers.push(userText);
+  $('bigMicBtn').style.display='none'; $('skipBtn').classList.remove('show');
+  $('micStatus').textContent='Evaluating...'; $('micStatus').className='active';
+  if($('hearingDisplay')) $('hearingDisplay').textContent='Thinking...';
+
+  var evalSys='You are a warm encouraging English coach for a non-native speaker interview practice session. Be generous.\n\nQuestion: "'+q.q+'" | Testing: '+q.dimension+' -- '+q.intent+'\n\nGenerous criteria:\n- good: relevant, 15+ words, shows effort.\n- ok: short (5-14 words) but on-topic.\n- weak: off-topic or under 5 meaningful words.\n- blank: nothing real.\n\nOnly set should_retry:true if quality is weak or blank AND retryCount is 0. Never retry more than once.\n\nReturn ONLY valid JSON no markdown:\n{"quality":"good|ok|weak|blank","score":0-100,"coach_msg":"1 warm sentence","praise_msg":"1 genuine praise","grammar_note":"one tip or empty","follow_up":"natural 1-sentence follow-up question","should_retry":true|false}';
+  var ev={quality:'ok',score:55,coach_msg:'',praise_msg:'Good attempt!',grammar_note:'',follow_up:'',should_retry:false};
+  var raw=await callAPI([{role:'user',content:'Q: '+q.q+'\nAnswer: "'+userText+'"\nRetry count: '+S.retryCount+'\n\nEvaluate.'}],evalSys,300);
+  if(raw){try{ev=Object.assign({},ev,JSON.parse(raw.replace(/```json|```/g,'').trim()));}catch{}}
+  if(!S.apiKey){
+    var wc=userText.trim().split(/\s+/).filter(Boolean).length;
+    if(wc<4){ev.quality='weak';ev.score=20;ev.should_retry=S.retryCount<1;ev.coach_msg=FB.comfort[Math.floor(Math.random()*FB.comfort.length)];}
+    else if(wc<12){ev.quality='ok';ev.score=Math.round(55+wc*2);ev.praise_msg=FB.praise[Math.floor(Math.random()*FB.praise.length)];}
+    else{ev.quality='good';ev.score=Math.min(88,Math.round(62+wc*1.2));ev.praise_msg=FB.praise[Math.floor(Math.random()*FB.praise.length)];}
+  }
+  S.qLog[qi].finalScore=ev.score;
+  S.qLog[qi].evalNotes=(S.qLog[qi].evalNotes||'')+(ev.grammar_note?'Grammar: '+ev.grammar_note+'. ':'')+ev.coach_msg;
+  $('micStatus').textContent='Tap to speak'; $('micStatus').className=''; S.voiceState='idle';
+
+  if(ev.should_retry&&S.retryCount<CFG.MAX_RETRIES&&(ev.quality==='weak'||ev.quality==='blank')){
+    S.retryCount++; S.qLog[qi].retries=S.retryCount;
+    if(S._usingFriendly){setFriendly('calm');}else{setChall('frown');await sleep(400);setChall('neutral');}
+    if(S.mentorMode!=='off') await phaseMentorCoach(ev.coach_msg||FB.coach[0],'comfort');
+    S.phase='qa_retry'; $('bigMicBtn').style.display='flex'; $('skipBtn').classList.add('show');
+    $('micStatus').textContent='Give it another go'; $('micStatus').className='active';
+    return;
+  }
+  S.qLog[qi].retries=S.retryCount;
+  var isLast=(qi+1>=S.questions.length);
+  if(S._usingFriendly){
+    setFriendly('excited_talk');
+    await showChallBubble(ev.quality==='good'?'Great answer!':'Alright, moving on.');
+    hideChallBubble(); setFriendly('calm');
+  } else {
+    setChall(ev.quality==='good'?'smile_talk':'neutral');
+    await showChallBubble(ev.quality==='good'?'Noted.':'Alright.'); hideChallBubble(); setChall('neutral');
+  }
+  var fuChance=ev.quality==='good'?0.55:(ev.quality==='ok'?0.28:0);
+  var hasFU=ev.follow_up&&ev.follow_up.trim().length>8;
+  if(!isLast&&hasFU&&S.retryCount===0&&Math.random()<fuChance){
+    await sleep(300);
+    if(S.mentorMode!=='off'&&S.intensity==='gentle') await phaseMentorPraise(ev.praise_msg);
+    if(S._usingFriendly){setFriendly('approve_talk');}else{setChall('smile_talk');}
+    await showChallBubble(ev.follow_up,false);
+    if(S._usingFriendly){setFriendly('calm');}else{setChall('neutral');}
+    S.phase='qa_listening'; $('bigMicBtn').style.display='flex'; $('skipBtn').classList.add('show');
+    $('micStatus').textContent='Answer the follow-up'; $('micStatus').className='active';
+    S._afterFollowUp=async function(fuText){
+      S._afterFollowUp=null; S.qLog[qi].userAnswers.push('[follow-up] '+fuText);
+      if(S.mentorMode!=='off'&&ev.praise_msg) await phaseMentorPraise(ev.praise_msg); else await sleep(400);
+      await phaseAskQuestion(qi+1);
+    };
+    return;
+  }
+  if(S.mentorMode!=='off'&&(S.intensity==='gentle'||ev.quality==='good')){await phaseMentorPraise(ev.praise_msg);}
+  else{await sleep(500);}
+  if(isLast){await phaseEnd();}else{await phaseAskQuestion(qi+1);}
+}  var levelNote = "";
+  var lv = S._stLevelEstimate || "unknown";
+  if(lv === "low"){
+    levelNote = "\n\nLEVEL DETECTED -- LOW: This user appears to be a lower-level English speaker. Adapt:\n" +
+      "- Use simpler shorter sentences. Model the English you want them to produce.\n" +
+      "- Do NOT ask open-ended abstract questions. Offer two concrete options: is it more that X, or more that Y?\n" +
+      "- When the user struggles to express something, rephrase their meaning back using the precise word, embedded naturally -- not as a correction.\n" +
+      "- Give sentence starters: you could say something like: I think this is because... -- does that fit?\n" +
+      "- Ask for one small specific thing: one moment, one example, one word.\n" +
+      "- Never push for depth. Goal: keep them talking and feeling capable.";
+  } else if(lv === "medium"){
+    levelNote = "\n\nLEVEL DETECTED -- INTERMEDIATE:\n" +
+      "- Push for specificity. When they say something general, ask for the concrete example.\n" +
+      "- Rephrase with more precise vocabulary naturally -- not as a correction.\n" +
+      "- Introduce some friction but keep questions focused.\n" +
+      "- Offer scaffolds when stuck: you could put it like... and let them react.";
+  } else if(lv === "high"){
+    levelNote = "\n\nLEVEL DETECTED -- HIGH: Confident English speaker. Engage fully.\n" +
+      "- Push ideas further, introduce real friction, name tensions between things they said.\n" +
+      "- Hold them to precision -- if something is vague, say so directly.";
+  } else {
+    levelNote = "\n\nLEVEL: Not yet determined. Start medium. Lower complexity if early answers are short or simple.";
+  }
+
+  
