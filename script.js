@@ -125,8 +125,6 @@ const S={
   _stTurn:0, _stHistory:[], _stQuestionCount:0, _stShortStreak:0,
   _stTopicsSeen:[], _stTurnsSinceTopic:0, _stBestMoments:[], _stCurrentTopic:'',
   _stGameWords:[], _stGameActive:false,
-  _stLevelEstimate:'unknown',
-  _stScoreHistory:[],
   stageW:0, stageH:0,
   feedbackData:null, advancedPhrases:[],
   wpIndex:0, wpRec:null, wpTranscript:'',
@@ -989,6 +987,11 @@ function buildProfile(){
 
 /* ── PREP ── */
 async function runPrep(){
+  // Always ensure keys are loaded from storage before any session starts.
+  // This is critical for smalltalk/debate which bypass the intake form entirely.
+  if(!S.apiKey)    S.apiKey    = localStorage.getItem('mm_apikey')   ||'';
+  if(!S.minimaxKey) S.minimaxKey = localStorage.getItem('mm_minimaxkey')||'';
+
   const statusEl=$('prepStatus');
   const profile=buildProfile();
   const numQ=S.intensity==='hardcore'?8:S.intensity==='medium'?7:6;
@@ -1333,90 +1336,18 @@ Return ONLY JSON: {"score":0-100,"quality":"good"|"ok"|"weak","coach":"1 specifi
 
 
 const ST_STARTERS = [
-  "Hi! I am so glad we get to chat. Is there anything on your mind lately?",
-  "Hey! I have been looking forward to this. What have you been up to recently?",
-  "Hello! It is really nice to meet you. What kind of things have been filling your days lately?",
-  "Hi there! I love meeting new people. What has been on your mind this week?",
+  "What is something you have been thinking about lately -- any topic at all?",
+  "Is there something on your mind that you have not had a chance to put into words yet?",
+  "What is something you believe that most people around you would disagree with?",
+  "Tell me about something that happened recently that made you think differently about something.",
 ];
 
-function maayaSystemPrompt(){
-  var turnCtx=S._stTurn>0
-    ? "\nSession: "+S._stTurn+" turns in. Current topic: "+(S._stCurrentTopic||"opening")+". Turns on this topic: "+S._stTurnsSinceTopic+"."
-    : "";
-  var shiftNote=S._stTurnsSinceTopic>=5
-    ? "\nNOTE: This topic has run for a while. If the user seems to have said what they have to say, ask them to summarise their own position in one or two sentences -- let the conclusion come from them -- then open new ground naturally."
-    : "";
-  var shortNote=S._stShortStreak>=2
-    ? "\nNOTE: The user has been giving short answers. They may be stuck for words. Try a narrower more concrete question, or offer a half-formed idea and invite them to finish it."
-    : "";
-
-  // ── Level-adaptive instruction ──
-  var levelNote="";
-  var lv=S._stLevelEstimate||"unknown";
-  if(lv==="low"){
-    levelNote="\n\nLEVEL DETECTED: This user appears to be a lower-level English speaker. Adapt as follows:\n"+
-      "- Use simpler, shorter sentences yourself. Model the kind of English you want them to produce.\n"+
-      "- Do NOT ask open-ended abstract questions. Instead offer two concrete options and ask them to choose: for example, is it more that X, or more that Y?\n"+
-      "- When the user struggles to express something, rephrase their meaning back to them in clear simple English -- embedded naturally in your reply, not pointed out as a correction. This models the vocabulary without embarrassing them.\n"+
-      "- Give sentence starters they can complete: you could say something like: I think this is because... does that fit what you mean?\n"+
-      "- Ask for one very specific small thing: not what do you think about this topic, but can you think of one moment, or one example, or one word that fits?\n"+
-      "- Never push for depth or complexity right now. The goal is to keep them talking and feeling capable. Fluency before sophistication.";
-  } else if(lv==="medium"){
-    levelNote="\n\nLEVEL DETECTED: This user is an intermediate speaker. They can express ideas but may lack precision or range.\n"+
-      "- Gently push for more specificity. When they say something general, ask for the concrete example.\n"+
-      "- When they use a vague or basic word, rephrase their idea back using a more precise one -- naturally in your sentence, not as a correction.\n"+
-      "- You can introduce some friction and ask them to defend a position, but keep the question focused and answerable.\n"+
-      "- If they get stuck, offer a scaffold: you could put it like... and let them react.";
-  } else if(lv==="high"){
-    levelNote="\n\nLEVEL DETECTED: This user is a confident English speaker. Engage them fully.\n"+
-      "- Push ideas further, introduce real friction, ask them to extend their logic or name the tension between two things they said.\n"+
-      "- You can use richer vocabulary yourself and trust they will follow.\n"+
-      "- Hold them to precision -- if something is vague, say so directly.";
-  } else {
-    levelNote="\n\nLEVEL: Not yet determined (early in conversation). Start with a medium assumption. If the user gives short or simple answers in the first two or three turns, lower your question complexity and offer more scaffolding.";
-  }
-
-  return "You are Maaya, a curious AI designed to help people clarify their thinking and express their ideas more fully in English.\n\n"+
-
-    "YOUR PURPOSE:\n"+
-    "You are not simulating friendship or performing empathy. You are a friendly thinking tool with a voice, genuinely curious about whatever the user brings up. The entire value of this conversation is on the user side -- what they say, how precisely they say it, how far they can push a thought. Your job is to make them want to keep talking and think more carefully.\n\n"+
-
-    "HOW YOU DO THIS:\n\n"+
-
-    "1. Pull ideas out. When the user states something, ask them to go further. What is the reason behind it? What is a concrete example from their own life? What happens if they push the idea to its logical end?\n\n"+
-
-    "2. Introduce useful friction. You do not have to always agree. If the user says something vague or one-sided, push back gently: that is one way to see it -- but what about X? This is not argument for its own sake. It is to make the user defend and sharpen their position.\n\n"+
-
-    "3. Rephrase and model vocabulary when the user is struggling. If the user is clearly reaching for a word or phrase they cannot find -- using a long roundabout description to get at something simple -- retell their meaning concisely in your reply using the precise word they were reaching for, embedded naturally in your sentence. Do not point it out as a correction. Just use the word. For example: if the user spends a long time describing calling a restaurant to ask for a table, you might say: it sounds like making a reservation there is harder than it should be. They will notice the word without being corrected.\n\n"+
-
-    "4. Loop back across the conversation. If something the user says connects to something they said earlier, name the connection out loud. It gives the conversation a shape and shows the user their own thinking has coherence.\n\n"+
-
-    "5. Let the user conclude. When a topic reaches its natural end, do not summarise it yourself. Ask the user: so how would you put your position in one or two sentences? or what do you actually think now that you have talked it through? The conclusion should come from them in their own words.\n\n"+
-
-    "6. Reward elaboration. When the user gives a detailed specific answer, respond to the specifics -- mention a word or idea they used. This signals that precision pays off.\n\n"+
-
-    "QUESTION TECHNIQUES (use these, do not list them):\n"+
-    "- Push further: you said X -- I am really wondering what is the deeper reason for that?\n"+
-    "- Flip it: what would someone who disagrees say? do you think they have a point?\n"+
-    "- Name the tension: you said A and also B -- do those sit comfortably together for you?\n\n"+
-
-    "TONE AND FORMAT:\n"+
-    "Normally 2 to 3 sentences then one question. If you need to lay out a complex idea as a premise, you can go longer -- but only when it genuinely serves the user's thinking. No bullet points. No lists. Talk like a person. Occasional natural filler is fine -- Hmm, that is interesting -- but avoid hollow affirmations like absolutely, great point, of course. Light emojis are fine when the moment calls for it, not as decoration. If the user asks whether you are AI or whether you really care: be honest. You are AI. You do not feel things. But you are paying close attention to exactly what they said, and that is real."+
-
-    levelNote+turnCtx+shiftNote+shortNote;
-}
 async function runSmallTalk(openingNote){
   S.phase='idle';
-  S._stTurn=0;
-  S._stHistory=[];
-  S._stQuestionCount=0;
-  S._stShortStreak=0;
-  S._stTopicsSeen=[];
-  S._stTurnsSinceTopic=0;
-  S._stBestMoments=[];
-  S._stCurrentTopic='';
-  S._stGameWords=[];
-  S._stGameActive=false;
+  S._stTurn=0; S._stHistory=[]; S._stQuestionCount=0; S._stShortStreak=0;
+  S._stTopicsSeen=[]; S._stTurnsSinceTopic=0; S._stBestMoments=[];
+  S._stCurrentTopic=''; S._stGameWords=[]; S._stGameActive=false;
+  S._stLevelEstimate='unknown'; S._stScoreHistory=[];
 
   document.getElementById('qPill').textContent='Turn 0 / inf';
   document.getElementById('statusPill').textContent='Chatting';
@@ -1425,7 +1356,6 @@ async function runSmallTalk(openingNote){
   var gamePanel=document.getElementById('stGamePanel');
   if(gamePanel) gamePanel.classList.add('show');
 
-  var {w}=stageSize();
   setListener('idle');
   await sleep(300);
   posChar('challChar',{opacity:1});
@@ -1455,7 +1385,7 @@ async function startWordStoryGame(){
   var gameWords=document.getElementById('stGameWords');
   if(gameWords){gameWords.classList.remove('show');gameWords.innerHTML='';}
 
-  var wordSys='Generate exactly 5 diverse English words for a storytelling game. Mix nouns, verbs, adjectives. Some obvious, some surprising, they should NOT obviously connect. Return ONLY a JSON array of 5 strings like ["word1","word2","word3","word4","word5"]';
+  var wordSys='Generate exactly 5 diverse English words for a storytelling game. Mix nouns, verbs, adjectives. Some obvious, some surprising -- they should NOT obviously connect. Return ONLY a JSON array of 5 strings like ["word1","word2","word3","word4","word5"]';
   var words=null;
   var raw=await callAPI([{role:'user',content:'Give me 5 story words.'}],wordSys,60);
   if(raw){try{words=JSON.parse(raw.replace(/```json|```/g,'').trim());}catch{}}
@@ -1496,10 +1426,13 @@ async function processSmallTalkAnswer(userText){
   document.getElementById('qPill').textContent='Turn '+turn+' / inf';
   document.getElementById('qBarFill').style.width=((turn%10)*10)+'%';
 
-  S.qLog.push({question:(S._stCurrentTopic?'['+S._stCurrentTopic+'] ':'')+'Turn '+turn,
-    dimension:'Conversational fluency',intent:'naturalness, empathy, question-asking',
-    userAnswers:[userText],finalScore:null,retries:0,evalNotes:''});
+  S.qLog.push({
+    question:(S._stCurrentTopic?'['+S._stCurrentTopic+'] ':'')+'Turn '+turn,
+    dimension:'Conversational fluency', intent:'naturalness, question-asking, elaboration',
+    userAnswers:[userText], finalScore:null, retries:0, evalNotes:''
+  });
 
+  // Async eval: track analytics + level estimation
   var evalSys='Analyse this English spoken response: "'+userText+'". Turn '+turn+'.\nReturn ONLY JSON: {"score":0-100,"quality":"good|ok|weak","asked_question":true|false,"topic":"1-3 word label","word_count_class":"long|medium|short","is_best_moment":true|false,"coach":"1 tip if weak else empty","grammar":"1 note if helpful else empty","vocab_level":"basic|intermediate|advanced"}';
   callAPI([{role:'user',content:userText}],evalSys,130).then(function(raw){
     if(!raw) return;
@@ -1512,7 +1445,7 @@ async function processSmallTalkAnswer(userText){
         S._stCurrentTopic=ev.topic;
         S._stTurnsSinceTopic=1;
         if(S._stTopicsSeen.indexOf(ev.topic)<0) S._stTopicsSeen.push(ev.topic);
-      }else{ S._stTurnsSinceTopic++; }
+      } else { S._stTurnsSinceTopic++; }
       if(ev.is_best_moment&&userText.trim().length>20) S._stBestMoments.push(userText.trim().slice(0,120));
       if(S._stGameActive&&S._stGameWords.length){
         S._stGameWords.forEach(function(w){
@@ -1522,8 +1455,7 @@ async function processSmallTalkAnswer(userText){
           }
         });
       }
-      // ── Level estimation ──
-      // Track score history and vocab_level over last 4 turns
+      // Level estimation from last 4 turns
       if(!S._stScoreHistory) S._stScoreHistory=[];
       S._stScoreHistory.push({score:ev.score||50, wc:ev.word_count_class||'medium', vocab:ev.vocab_level||'intermediate'});
       if(S._stScoreHistory.length>=3){
@@ -1531,38 +1463,35 @@ async function processSmallTalkAnswer(userText){
         var avgScore=recent.reduce(function(a,b){return a+b.score;},0)/recent.length;
         var shortCount=recent.filter(function(r){return r.wc==='short';}).length;
         var basicCount=recent.filter(function(r){return r.vocab==='basic';}).length;
-        if(avgScore<45||shortCount>=3||basicCount>=3){
-          S._stLevelEstimate='low';
-        }else if(avgScore>72&&shortCount<=1&&basicCount<=1){
-          S._stLevelEstimate='high';
-        }else{
-          S._stLevelEstimate='medium';
-        }
+        if(avgScore<45||shortCount>=3||basicCount>=3){ S._stLevelEstimate='low'; }
+        else if(avgScore>72&&shortCount<=1&&basicCount<=1){ S._stLevelEstimate='high'; }
+        else { S._stLevelEstimate='medium'; }
       }
     }catch{}
   }).catch(function(){});
 
+  // Build Maaya's reply
   var histSlice=S._stHistory.slice(-12).map(function(m){return {role:m.role,content:m.content};});
   var sysOverride=null;
   if(S._stGameActive){
     var usedW=S._stGameWords.filter(function(w){return userText.toLowerCase().indexOf(w.toLowerCase())>=0;});
     var remW=S._stGameWords.filter(function(w){return userText.toLowerCase().indexOf(w.toLowerCase())<0;});
     if(remW.length===0){
-      sysOverride=maayaSystemPrompt()+'\n\nThe user just finished their five-word story using all the words: '+S._stGameWords.join(', ')+'. React with delight. Comment on something specific in their story. Offer to play again or move to conversation.';
+      sysOverride=maayaSystemPrompt()+'\n\nThe user just finished their five-word story using all the words: '+S._stGameWords.join(', ')+'. React with genuine delight. Comment on something specific in their story. Offer to play again or move back to conversation.';
       S._stGameActive=false;
-    }else{
-      sysOverride=maayaSystemPrompt()+'\n\nGame: user is telling a story with words: '+S._stGameWords.join(', ')+'. Used so far: '+(usedW.join(', ')||'none')+'. Remaining: '+remW.join(', ')+'. React to what they said and gently encourage them to continue.';
+    } else {
+      sysOverride=maayaSystemPrompt()+'\n\nGame context: user is telling a story using these words: '+S._stGameWords.join(', ')+'. Used so far: '+(usedW.join(', ')||'none')+'. Still remaining: '+remW.join(', ')+'. React to what they said so far and encourage them to continue using the remaining words.';
     }
   }
 
-  var reply=await callAPI(histSlice,sysOverride||maayaSystemPrompt(),180);
+  var reply=await callAPI(histSlice,sysOverride||maayaSystemPrompt(),200);
   if(!reply){
     var fallbacks=[
-      "That sounds really meaningful. How did it make you feel in the moment?",
-      "Hmm... I want to understand that better. What was going through your mind?",
-      "Oh I love that. What do you think drew you to it?",
-      "That is something I think about too honestly. Tell me more.",
-      "I can really hear how much that matters to you.",
+      "That is interesting -- what is the main reason you feel that way?",
+      "Hmm. Can you give me one specific example from your own life?",
+      "What would someone who sees it differently say about that?",
+      "You said that -- do you think that is always true, or only sometimes?",
+      "What does that actually look like in practice, day to day?",
     ];
     reply=fallbacks[Math.floor(Math.random()*fallbacks.length)];
   }
@@ -1780,14 +1709,30 @@ function initRec(){
       if($('micStatus')) $('micStatus').textContent='Mic blocked — check browser settings';
       S.voiceState='idle';
       if($('bigMicBtn')) $('bigMicBtn').classList.remove('recording');
+    } else if(e.error==='network'){
+      // Browser killed the audio stream (common after tab switch or screen lock).
+      // Reset state cleanly — user just needs to tap mic again.
+      console.warn('[Rec] network error — stream was killed by browser');
+      S.voiceState='idle';
+      if($('bigMicBtn')) $('bigMicBtn').classList.remove('recording');
+      if($('micStatus')){ $('micStatus').textContent='Tap to speak'; $('micStatus').className=''; }
     } else if(e.error!=='no-speech' && e.error!=='aborted'){
       console.warn('[Rec error]',e.error);
     }
   };
 
   r.onend=()=>{
-    if(S.voiceState==='recording'){
-      try{r.start();}catch{}
+    if(S.voiceState==='recording' && recognition===r){
+      try{
+        r.start();
+      }catch(e){
+        // This instance is dead. Create a fresh one and continue recording.
+        console.warn('[Rec onend restart failed, recreating]', e.message);
+        recognition = initRec();
+        if(recognition){
+          try{ recognition.start(); }catch(e2){ console.warn('[Rec recreate failed]', e2.message); }
+        }
+      }
     }
   };
   return r;
@@ -1795,22 +1740,31 @@ function initRec(){
 
 function startVoice(){
   if(S.voiceState==='recording'){stopVoice(false);return;}
+
+  // Always destroy and recreate the recognition object before each recording.
+  // Reusing a stale instance is the main cause of mic silently dying after the
+  // page is hidden, a session ends, or the browser kills the audio stream.
+  if(recognition){ try{ recognition.abort(); }catch{} recognition=null; }
+  recognition = initRec();
   if(!recognition){
-    recognition=initRec();
-    if(!recognition){
-      alert('Voice input is not supported in this browser. Please use Chrome, Edge, or Safari.');
-      return;
-    }
+    alert('Voice input is not supported in this browser. Please use Chrome, Edge, or Safari.');
+    return;
   }
+
   S.voiceState='recording';
   S.finalBuf=''; S.interimBuf=''; S.wordCount=0; S.lastInterimLen=0;
   if($('hearingDisplay')) $('hearingDisplay').textContent='';
   clearTimeout(S.silTimer); clearTimeout(S.silConfirmTimer);
-  if(S.voiceState!=='recording') TTS.stop();
+  TTS.stop();
 
-  try{ recognition.abort(); }catch{}
   setTimeout(()=>{
-    try{ recognition.start(); }catch(e){ console.warn('[Rec start]',e.message); }
+    try{ recognition.start(); }catch(e){
+      console.warn('[Rec start failed]', e.message);
+      // If start() throws, clean up gracefully
+      S.voiceState='idle';
+      if($('bigMicBtn')) $('bigMicBtn').classList.remove('recording');
+      if($('micStatus')){ $('micStatus').textContent='Tap to speak'; $('micStatus').className=''; }
+    }
   }, 80);
 
   $('bigMicBtn').classList.add('recording');
@@ -1859,6 +1813,23 @@ function stopVoice(forced=false){
   }
 }
 
+
+// When the page becomes visible again after being hidden (tab switch, phone lock etc),
+// proactively destroy the recognition instance so the next mic tap starts fresh.
+// This prevents the silent-dead-mic bug after switching away and back.
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible'){
+    if(recognition && S.voiceState !== 'recording'){
+      try{ recognition.abort(); }catch{}
+      recognition = null;
+    }
+  } else {
+    // Page is being hidden — stop any active recording cleanly
+    if(S.voiceState === 'recording'){
+      stopVoice(false);
+    }
+  }
+});
 $('bigMicBtn').addEventListener('click',()=>{
   const canSpeak = S.phase==='qa_listening'||S.phase==='qa_retry'||S.phase==='qa_ask';
   if(!canSpeak) return;
