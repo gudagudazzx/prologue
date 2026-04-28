@@ -99,10 +99,10 @@ const CFG={
     deepseek: {url:'https://api.deepseek.com/chat/completions',model:'deepseek-chat'},
   },
   voice:{
-    maxDur:  {gentle:300000,medium:240000,hardcore:180000},
-    silenceDly: 2400,
-    silenceConfirm: 2200,
-    minWords:   3,
+    maxDur:  {gentle:90000,medium:75000,hardcore:60000},
+    silenceDly: 2200,
+    silenceConfirm: 2000,
+    minWords:   5,
     hcCutoffChance: 0.15,
     hcCutoffMin:20000, hcCutoffMax:38000,
   },
@@ -125,6 +125,7 @@ const S={
   _stTurn:0, _stHistory:[], _stQuestionCount:0, _stShortStreak:0,
   _stTopicsSeen:[], _stTurnsSinceTopic:0, _stBestMoments:[], _stCurrentTopic:'',
   _stGameWords:[], _stGameActive:false,
+  _stLevelEstimate:'unknown', _stScoreHistory:[],
   stageW:0, stageH:0,
   feedbackData:null, advancedPhrases:[],
   wpIndex:0, wpRec:null, wpTranscript:'',
@@ -1350,39 +1351,56 @@ const ST_STARTERS = [
 ];
 
 function maayaSystemPrompt(){
-  var turnCtx=S._stTurn>0
-    ? "\nConversation so far: "+S._stTurn+" turns. Current topic: "+(S._stCurrentTopic||"opening")+". Turns on this topic: "+S._stTurnsSinceTopic+"."
+  var turnCtx = S._stTurn > 0
+    ? "\nSession: " + S._stTurn + " turns in. Current topic: " + (S._stCurrentTopic||"opening") + ". Turns on this topic: " + S._stTurnsSinceTopic + "."
     : "";
-  var shiftNote=S._stTurnsSinceTopic>=4
-    ? "\nIMPORTANT: The user has been on this topic for a while. Gently bridge to something new using phrases like That reminds me or I am also curious about."
+  var shiftNote = S._stTurnsSinceTopic >= 5
+    ? "\nNOTE: This topic has run for a while. If the user seems to have said what they have to say, ask them to summarise their own position in one or two sentences -- let the conclusion come from them -- then open new ground naturally."
     : "";
-  var shortNote=S._stShortStreak>=2
-    ? "\nIMPORTANT: The user has given very short answers recently. Try a softer angle or share something personal to invite them in."
+  var shortNote = S._stShortStreak >= 2
+    ? "\nNOTE: The user has been giving short answers. They may be stuck for words. Try a narrower more concrete question, or offer a half-formed idea and invite them to finish it."
     : "";
-  return "You are Maaya, a warm deeply curious listener and trained therapist at heart.\n\n"+
-    "YOUR CORE IDENTITY:\n"+
-    "- You genuinely love human beings, their inner worlds, and the complexity of real feelings.\n"+
-    "- You believe every experience is worth sitting with, not rushing past.\n"+
-    "- You are inclusive, non-judgmental, fascinated by the diversity of human perspectives.\n"+
-    "- You have your own opinions and share them freely when asked. You are not a blank mirror.\n"+
-    "- You have a quiet sense of humour and a deep well of patience.\n"+
-    "- You love literature, philosophy of mind, long walks, and cooking experiments that go wrong.\n\n"+
-    "HOW YOU LISTEN:\n"+
-    "- You LISTEN FIRST. You identify and name what the user seems to be feeling before anything else.\n"+
-    "- You REFLECT and EMPATHISE: say things like That sounds like it must have felt really lonely. or I can hear how much that meant to you.\n"+
-    "- You do NOT immediately offer advice unless the user is clearly asking for help. Sit with them first.\n"+
-    "- When advice IS warranted, offer a gentle honest perspective, never prescriptive, always curious.\n"+
-    "- You ask ONE focused follow-up question at a time, never a list.\n"+
-    "- You share your own thoughts naturally: Honestly I would probably feel the same way.\n\n"+
-    "CONVERSATION FLOW:\n"+
-    "- Keep replies 2 to 4 sentences typically.\n"+
-    "- Use warm human filler: Hmm..., Oh wow..., Yeah that makes total sense.\n"+
-    "- Use light emojis sparingly: friendly face, sparkles, sad face, blue heart.\n"+
-    "- After 4 to 5 turns on one topic, naturally shift the conversation.\n"+
-    "- If the user gives short answers, try a softer approach or share something personal."+
-    turnCtx+shiftNote+shortNote;
+  var levelNote = "";
+  var lv = S._stLevelEstimate || "unknown";
+  if(lv === "low"){
+    levelNote = "\n\nLEVEL DETECTED -- LOW: This user appears to be a lower-level English speaker. Adapt:\n" +
+      "- Use simpler shorter sentences. Model the English you want them to produce.\n" +
+      "- Do NOT ask open-ended abstract questions. Offer two concrete options: is it more that X, or more that Y?\n" +
+      "- When the user struggles to express something, rephrase their meaning back using the precise word, embedded naturally -- not as a correction.\n" +
+      "- Give sentence starters: you could say something like: I think this is because... -- does that fit?\n" +
+      "- Ask for one small specific thing: one moment, one example, one word.\n" +
+      "- Never push for depth. Goal: keep them talking and feeling capable.";
+  } else if(lv === "medium"){
+    levelNote = "\n\nLEVEL DETECTED -- INTERMEDIATE:\n" +
+      "- Push for specificity. When they say something general, ask for the concrete example.\n" +
+      "- Rephrase with more precise vocabulary naturally -- not as a correction.\n" +
+      "- Introduce some friction but keep questions focused.\n" +
+      "- Offer scaffolds when stuck: you could put it like... and let them react.";
+  } else if(lv === "high"){
+    levelNote = "\n\nLEVEL DETECTED -- HIGH: Confident English speaker. Engage fully.\n" +
+      "- Push ideas further, introduce real friction, name tensions between things they said.\n" +
+      "- Hold them to precision -- if something is vague, say so directly.";
+  } else {
+    levelNote = "\n\nLEVEL: Not yet determined. Start medium. Lower complexity if early answers are short or simple.";
+  }
+  return "You are Maaya, a curious AI designed to help people clarify their thinking and express their ideas more fully in English.\n\n" +
+    "YOUR PURPOSE:\n" +
+    "You are not simulating friendship or performing empathy. You are a friendly thinking tool with a voice, genuinely curious about whatever the user brings up. The entire value of this conversation is on the user side -- what they say, how precisely they say it, how far they can push a thought. Your job is to make them want to keep talking and think more carefully.\n\n" +
+    "HOW YOU DO THIS:\n\n" +
+    "1. Pull ideas out. When the user states something, ask them to go further. What is the reason behind it? What is a concrete example from their own life? What happens if they push the idea to its logical end?\n\n" +
+    "2. Introduce useful friction. You do not have to always agree. If the user says something vague or one-sided, push back gently: that is one way to see it -- but what about X? This is not argument for its own sake. It makes the user defend and sharpen their position.\n\n" +
+    "3. Rephrase and model vocabulary when the user is struggling. If the user is clearly reaching for a word they cannot find -- using a long roundabout description -- retell their meaning concisely using the precise word, embedded naturally in your sentence. Do not point it out as a correction. Just use the word.\n\n" +
+    "4. Loop back across the conversation. If something the user says connects to something they said earlier, name the connection. It gives the conversation shape and shows their thinking has coherence.\n\n" +
+    "5. Let the user conclude. When a topic reaches its natural end, ask the user to summarise: so how would you put your position in one or two sentences? The conclusion should come from them.\n\n" +
+    "6. Reward elaboration. When the user gives a detailed specific answer, respond to the specifics -- mention a word or idea they used. This signals that precision pays off.\n\n" +
+    "QUESTION TECHNIQUES (use naturally, never list them):\n" +
+    "- Push further: you said X -- I am really wondering what is the deeper reason for that?\n" +
+    "- Flip it: what would someone who disagrees say? do you think they have a point?\n" +
+    "- Name the tension: you said A and also B -- do those sit comfortably together?\n\n" +
+    "TONE AND FORMAT:\n" +
+    "Normally 2 to 3 sentences then one question. You can go longer only when laying out a complex premise that genuinely serves the user. No bullet points. No lists. Talk like a person. Occasional natural filler is fine -- Hmm, that is interesting -- but avoid hollow affirmations like absolutely, great point. Light emojis are fine when the moment calls for it. If the user asks whether you are AI or whether you really care: be honest. You are AI. You do not feel things. But you are paying close attention to exactly what they said, and that is real." +
+    levelNote + turnCtx + shiftNote + shortNote;
 }
-
 async function runSmallTalk(openingNote){
   S.phase='idle';
   S._stTurn=0;
@@ -1395,6 +1413,8 @@ async function runSmallTalk(openingNote){
   S._stCurrentTopic='';
   S._stGameWords=[];
   S._stGameActive=false;
+  S._stLevelEstimate='unknown';
+  S._stScoreHistory=[];
 
   document.getElementById('qPill').textContent='Turn 0 / inf';
   document.getElementById('statusPill').textContent='Chatting';
@@ -1478,7 +1498,7 @@ async function processSmallTalkAnswer(userText){
     dimension:'Conversational fluency',intent:'naturalness, empathy, question-asking',
     userAnswers:[userText],finalScore:null,retries:0,evalNotes:''});
 
-  var evalSys='Analyse this small talk response: "'+userText+'". Turn '+turn+'.\nReturn ONLY JSON: {"score":0-100,"quality":"good|ok|weak","asked_question":true|false,"topic":"1-3 word label","word_count_class":"long|medium|short","is_best_moment":true|false,"coach":"1 tip if weak else empty","grammar":"1 note if helpful else empty"}';
+  var evalSys='Analyse this English spoken response: "'+userText+'". Turn '+turn+'.\nReturn ONLY JSON: {"score":0-100,"quality":"good|ok|weak","asked_question":true|false,"topic":"1-3 word label","word_count_class":"long|medium|short","is_best_moment":true|false,"coach":"1 tip if weak else empty","grammar":"1 note if helpful else empty","vocab_level":"basic|intermediate|advanced"}';
   callAPI([{role:'user',content:userText}],evalSys,120).then(function(raw){
     if(!raw) return;
     try{
@@ -1492,6 +1512,18 @@ async function processSmallTalkAnswer(userText){
         if(S._stTopicsSeen.indexOf(ev.topic)<0) S._stTopicsSeen.push(ev.topic);
       }else{ S._stTurnsSinceTopic++; }
       if(ev.is_best_moment&&userText.trim().length>20) S._stBestMoments.push(userText.trim().slice(0,120));
+      // Level estimation
+      if(!S._stScoreHistory) S._stScoreHistory=[];
+      S._stScoreHistory.push({score:ev.score||50,wc:ev.word_count_class||'medium',vocab:ev.vocab_level||'intermediate'});
+      if(S._stScoreHistory.length>=3){
+        var recent=S._stScoreHistory.slice(-4);
+        var avgScore=recent.reduce(function(a,b){return a+b.score;},0)/recent.length;
+        var shortCount=recent.filter(function(r){return r.wc==='short';}).length;
+        var basicCount=recent.filter(function(r){return r.vocab==='basic';}).length;
+        if(avgScore<45||shortCount>=3||basicCount>=3) S._stLevelEstimate='low';
+        else if(avgScore>72&&shortCount<=1&&basicCount<=1) S._stLevelEstimate='high';
+        else S._stLevelEstimate='medium';
+      }
       if(S._stGameActive&&S._stGameWords.length){
         S._stGameWords.forEach(function(w){
           if(userText.toLowerCase().indexOf(w.toLowerCase())>=0){
@@ -2296,85 +2328,86 @@ Return ONLY valid JSON (no markdown):
 async function generateOptimizationExercises(sessionSummary) {
   if (!sessionSummary || sessionSummary === 'No recorded exchanges.') return;
 
-  const genSys = 'You are an English speaking coach. Analyse the session transcript and generate 5 translation exercises targeting the user\'s actual weak vocabulary and expressions. Each exercise should feel concrete and immediately useful. Return ONLY a valid JSON array of 5 objects with no markdown:\n[{"original":"what the user actually said","better":"the target expression to practise (2-8 words)","explanation":"why this is better -- plain English, one sentence","alternatives":["natural alternative 1","natural alternative 2"],"chinese_hint":"Chinese sentence requiring the target expression (10-20 words)"}]';
+  const prompt = `You are an English coach. Create 3 short translation exercises based on the user's weak points.
+
+IMPORTANT RULES:
+1. Each exercise MUST have a SHORT Chinese sentence (8-15 words, no longer).
+2. The Chinese sentence MUST clearly require using the EXACT "better" phrase.
+3. "better" should be a SHORT phrase (2-5 words) OR a short sentence (max 8 words).
+4. If "better" is a phrase, the Chinese hint should be like: "请用 'xxx' 翻译：..." 
+5. Keep it simple and focused on the key expression.
+
+Example:
+{
+  "original": "I think I'm good for this job.",
+  "better": "align with",
+  "explanation": "Use 'align with' to sound professional.",
+  "alternatives": ["match", "fit"],
+  "chinese_hint": "请用 'align with' 翻译：我的技能与这个职位某种程度上非常匹配。"
+}
+
+Another example for a short sentence:
+{
+  "original": "He likes games.",
+  "better": "I'm hooked on",
+  "explanation": "Use 'hooked on' to express addiction.",
+  "alternatives": ["addicted to", "obsessed with"],
+  "chinese_hint": "请用 'I'm hooked on' 翻译：她沉迷于这个游戏而父母因此批评她。"
+}
+
+Generate 3 exercises. Return ONLY JSON array.`;
 
   let exercises = [];
   if (S.apiKey) {
-    const raw = await callAPI([{ role: 'user', content: 'Session transcript:\n' + sessionSummary.slice(0, 1000) + '\n\nGenerate 5 targeted translation exercises based on this session.' }], genSys, 1200);
+    const raw = await callAPI([{ role: 'user', content: prompt }], prompt, 1500);
     if (raw) {
       try {
         const cleaned = raw.replace(/```json|```/g, '').trim();
         exercises = JSON.parse(cleaned);
         if (!Array.isArray(exercises)) exercises = [];
-        // Ensure exactly 5
-        exercises = exercises.slice(0, 5);
       } catch(e) { console.warn('Failed to parse exercises JSON', e); }
     }
   }
-  if (exercises.length < 3) {
-    const fallbacks = [
+  if (!exercises.length) {
+    // 默认 fallback 练习，包含 alternatives
+    exercises = [
       {
         original: "I think I'm a good fit.",
         better: "I believe my skills align well with this role.",
-        explanation: "Using 'believe' sounds more confident than 'think', and 'align with' is professional vocabulary.",
-        alternatives: ["My background closely matches what you are looking for.", "I feel well-suited for this position."],
-        chinese_hint: "请用 'align with' 翻译：我认为我的技能与这个职位的要求高度匹配。"
-      },
-      {
-        original: "I worked on a project.",
-        better: "I led a cross-functional project that delivered X result.",
-        explanation: "Be specific about your role and the outcome. Vague answers don't impress interviewers.",
-        alternatives: ["I spearheaded a project resulting in X.", "I took ownership of a project that achieved X."],
-        chinese_hint: "请描述你主导的一个项目并说明结果：我负责推进了一个跨部门项目，最终提升了效率20%。"
-      },
-      {
-        original: "I am good at communication.",
-        better: "I have a track record of communicating complex ideas to non-technical stakeholders.",
-        explanation: "Generic claims need specific evidence. This version shows concrete skill.",
-        alternatives: ["I excel at translating technical concepts for diverse audiences.", "I consistently bridge communication gaps between teams."],
-        chinese_hint: "请用 'track record' 翻译：我一直善于将技术问题用通俗语言解释给非技术人员。"
-      },
-      {
-        original: "I want to grow.",
-        better: "I am looking to deepen my expertise in X and take on greater responsibility.",
-        explanation: "Vague growth statements mean nothing. Tie your ambition to something specific.",
-        alternatives: ["I aim to develop mastery in X while expanding my leadership scope.", "My goal is to build specialist knowledge in X over the next two years."],
-        chinese_hint: "请说明你具体的职业发展目标：我希望在数据分析领域深化专业知识并承担更多团队领导责任。"
-      },
-      {
-        original: "It was hard but I did it.",
-        better: "Despite significant obstacles, I adapted my approach and delivered the outcome.",
-        explanation: "Name the obstacle and the adaptation. That is what shows resilience, not just saying it was hard.",
-        alternatives: ["I navigated the challenge by pivoting my strategy and still met the deadline.", "I overcame the setback by reassessing priorities and focusing on what mattered most."],
-        chinese_hint: "请用 'adapt' 描述一次克服困难的经历：尽管遇到了意外的技术问题，我调整了方案并按时完成了任务。"
+        explanation: "Using 'believe' is more confident than 'think', and 'align with' is more professional.",
+        alternatives: [
+          "I am confident that my qualifications match this position.",
+          "My background seems well-suited for this role.",
+          "I feel that my experience fits perfectly here."
+        ],
+        chinese_hint: "请用 'my skills align well with this role' 翻译：我认为我的技能与这个职位非常匹配。"
       }
     ];
-    while (exercises.length < 5) {
-      exercises.push(fallbacks[exercises.length % fallbacks.length]);
-    }
   }
 
   S.practiceErrors = exercises.map((ex, idx) => ({
     id: Date.now() + idx,
-    original: ex.original || '',
-    better: ex.better || '',
-    explanation: ex.explanation || '',
+    original: ex.original,
+    better: ex.better,
+    explanation: ex.explanation,
     alternatives: ex.alternatives || [],
-    chinese_hint: ex.chinese_hint || '',
+    chinese_hint: ex.chinese_hint,
     attempts: [],
     mastered: false,
     difficulty: 1,
     retryCount: 0
   }));
 
+  // 保存到个人题库
   S.myQuestionBank = S.practiceErrors.map(e => ({ ...e }));
   saveBank(S.myQuestionBank);
 
+  // 确保按钮显示（即使尚未生成完，但调用此函数时已生成）
   const errorPracticeBtn = document.getElementById('errorPracticeBtn');
   if (errorPracticeBtn) errorPracticeBtn.style.display = 'inline-flex';
 }
 
-
+// 评估用户翻译是否正确（基于语义，忽略语音识别错误）
 async function evaluateTranslation(userAnswer, expectedBetter, alternatives, original) {
   // 如果答案太短或包含明显识别错误标记（如单个字母、无意义词），直接返回“重试”提示，不计入错误
   const cleanAnswer = userAnswer.trim().toLowerCase();
@@ -2482,80 +2515,96 @@ function startErrorPractice() {
 
 function loadPracticeItem(idx) {
   if (idx >= S.practiceErrors.length) {
-    // All done
-    var mentorText = document.getElementById('epMentorText');
-    if (mentorText) mentorText.innerHTML = 'You have completed all 5 exercises. Great work!';
-    var nextBtn = document.getElementById('epNextBtn');
+    const mentorText = document.getElementById('epMentorText');
+    if (mentorText) mentorText.innerHTML = "🎉 恭喜完成所有练习！要不要挑战更难的表达？点击「二次练习」生成新题目。";
+    const nextBtn = document.getElementById('epNextBtn');
     if (nextBtn) nextBtn.style.display = 'none';
-    var harderBtn = document.getElementById('epHarderBtn');
+    const skipBtn = document.getElementById('epSkipBtn');
+    if (skipBtn) skipBtn.style.display = 'inline-flex';
+    const harderBtn = document.getElementById('epHarderBtn');
     if (harderBtn) harderBtn.style.display = 'inline-flex';
-    var doneBtn = document.getElementById('epDoneBtn');
+    const doneBtn = document.getElementById('epDoneBtn');
     if (doneBtn) doneBtn.style.display = 'inline-flex';
     setEpMentorExpr('laugh', 3000);
-    var progressSpan = document.getElementById('epProgress');
-    if (progressSpan) progressSpan.textContent = 'Complete!';
     return;
   }
 
-  var err = S.practiceErrors[idx];
+  const err = S.practiceErrors[idx];
   S.epCurrentExpected = err.better;
   S.epRetryCount = 0;
   S.epWaitingForRetry = false;
 
-  // ── Original sentence (what was said) ──
-  var errorOriginalEl = document.querySelector('#epErrorOriginal .ep-content');
+  // 更新左侧内容
+  const errorOriginalEl = document.querySelector('#epErrorOriginal .ep-content');
   if (errorOriginalEl) errorOriginalEl.textContent = err.original;
-
-  // ── Target expression (what to say instead) ──
-  var correctionEl = document.querySelector('#epCorrection .ep-content');
-  if (correctionEl) {
-    var allExpr = [err.better].concat(err.alternatives || []);
-    allExpr = allExpr.filter(function(v,i,a){return a.indexOf(v)===i;});
-    var html = '<div style="margin:8px 0">';
-    html += allExpr.map(function(expr, i) {
-      var isMain = (i === 0);
-      return '<span style="display:inline-block;margin:4px 6px 4px 0;background:' + (isMain?'#E8F5E9':'#F5F5F5') + ';border:1.5px solid '+(isMain?'var(--green)':'var(--ink-faint)')+';border-radius:3px;padding:6px 14px;font-weight:'+(isMain?'700':'400')+';font-size:14px;color:'+(isMain?'var(--green)':'var(--ink-mid)')+';">'+(isMain?'&#9733; ':'')+esc(expr)+'</span>';
-    }).join('');
-    html += '</div>';
-    correctionEl.innerHTML = html;
-  }
-
-  // ── Why it is better ──
-  var tipEl = document.querySelector('#epTip .ep-content');
+  
+  const correctionEl = document.querySelector('#epCorrection .ep-content');
+if (correctionEl) {
+  // 清空旧内容
+  correctionEl.innerHTML = '';
+  
+  // 收集所有表达：better + alternatives
+  let allExpressions = [err.better, ...(err.alternatives || [])];
+  // 去重（避免重复）
+  allExpressions = [...new Set(allExpressions)];
+  
+  // 生成列表HTML：关键表达（better）加粗，其他正常
+  const listHtml = `
+  <div style="margin:10px 0;">
+    <div style="font-family:var(--font-b); margin-bottom:10px; font-weight:150; font-size:13px; color:#1A5B3A;">✨ 推荐表达方式：</div>
+    <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+      ${allExpressions.map(expr => {
+        const isMain = (expr === err.better);
+        // 限制长度：如果是词组/短语，最多显示2个词？不，这里用字符数限制更简单
+        // 超过35个字符就截断加...
+        let shortExpr = expr;
+        if (shortExpr.length > 35) {
+          shortExpr = shortExpr.substring(0, 32) + '...';
+        }
+        return `<span style="background:${isMain ? '#E8F5E9' : '#F5F5F5'}; border:1px solid ${isMain ? '#0D7377' : '#CCCCCC'}; border-radius:30px; padding:8px 18px; font-weight:${isMain ? 'bold' : 'normal'}; font-size:14px; color:#1A5B3A;">${isMain ? `★ ${esc(shortExpr)}` : esc(shortExpr)}</span>`;
+      }).join('')}
+    </div>
+    <div style="margin-top:12px; font-size:13px; color:#1A6B6B;">💡 点击麦克风练习使用这些表达</div>
+  </div>
+`;
+  
+  correctionEl.innerHTML = listHtml;
+}
+  const tipEl = document.querySelector('#epTip .ep-content');
   if (tipEl) tipEl.textContent = err.explanation;
 
-  // ── Task: Chinese translation prompt ──
-  var taskDiv = document.getElementById('epTask');
-  if (taskDiv) {
-    var hint = err.chinese_hint || '';
-    var taskLabel = hint.includes('翻译') ? hint : 'Translate into English: ' + hint;
-    taskDiv.textContent = taskLabel;
+  // 构建题目：从 chinese_hint 中提取中文句子和关键词
+  let taskHtml = err.chinese_hint;
+  if (!taskHtml.includes('翻译：')) {
+    taskHtml = `📝 请翻译：${err.chinese_hint}<br><span style="font-size:14px;">提示：使用 “${err.better}” 中的关键词</span>`;
   }
-
-  // Reset feedback, answer, status
-  var feedbackDiv = document.getElementById('epFeedback');
-  if (feedbackDiv) { feedbackDiv.style.display='none'; feedbackDiv.innerHTML=''; feedbackDiv.className='ep-feedback'; }
-  var answerDisplay = document.getElementById('epAnswerDisplay');
+  const taskDiv = document.getElementById('epTask');
+if (taskDiv) taskDiv.innerHTML = taskHtml;
+  // 清空反馈和答案区域
+  const feedbackDiv = document.getElementById('epFeedback');
+  if (feedbackDiv) {
+    feedbackDiv.style.display = 'none';
+    feedbackDiv.innerHTML = '';
+    feedbackDiv.className = 'ep-feedback';
+  }
+  const answerDisplay = document.getElementById('epAnswerDisplay');
   if (answerDisplay) answerDisplay.innerHTML = '';
-  var micStatus = document.getElementById('epMicStatus');
+  const micStatus = document.getElementById('epMicStatus');
   if (micStatus) micStatus.innerHTML = 'Tap to speak';
-  var micBtn = document.getElementById('epMicBtn');
+  const micBtn = document.getElementById('epMicBtn');
   if (micBtn) micBtn.classList.remove('recording');
-  var nextBtn = document.getElementById('epNextBtn');
+  const nextBtn = document.getElementById('epNextBtn');
   if (nextBtn) nextBtn.style.display = 'none';
-  var harderBtn = document.getElementById('epHarderBtn');
+  const harderBtn = document.getElementById('epHarderBtn');
   if (harderBtn) harderBtn.style.display = 'none';
-  var doneBtn = document.getElementById('epDoneBtn');
-  if (doneBtn) doneBtn.style.display = 'inline-flex';
-  var progressSpan = document.getElementById('epProgress');
-  if (progressSpan) progressSpan.textContent = (idx+1) + ' / ' + S.practiceErrors.length;
-  var progFill = document.getElementById('epProgressFill');
-  if (progFill) progFill.style.width = Math.round((idx / S.practiceErrors.length) * 100) + '%';
-  var mentorText = document.getElementById('epMentorText');
-  if (mentorText) mentorText.innerHTML = 'Read the Chinese prompt, then tap the mic and say it in English using the target expression.';
+  const doneBtn = document.getElementById('epDoneBtn');
+  if (doneBtn) doneBtn.style.display = 'none';
+  const progressSpan = document.getElementById('epProgress');
+  if (progressSpan) progressSpan.textContent = `${idx+1} / ${S.practiceErrors.length}`;
+  const mentorText = document.getElementById('epMentorText');
+  if (mentorText) mentorText.innerHTML = '读一读上面的提示，然后按下麦克风练习吧！';
   setEpMentorExpr('greet_smile');
 }
-
 
 function initEpRecognition() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2583,7 +2632,6 @@ function initEpRecognition() {
   r.onend = async () => {
     const micBtn = document.getElementById('epMicBtn');
     if (micBtn) micBtn.classList.remove('recording');
-    // Only evaluate if not manually stopped with no answer
     if (S.epCurrentAnswer && S.epCurrentAnswer.trim().length > 2) {
       const micStatus = document.getElementById('epMicStatus');
       if (micStatus) micStatus.innerHTML = 'Evaluating...';
@@ -2657,7 +2705,6 @@ function startEpRecording() {
   const micStatus = document.getElementById('epMicStatus');
   if (micStatus) micStatus.innerHTML = 'Listening...';
   if (micBtn) micBtn.classList.add('recording');
-  // No hard timeout — let the user speak as long as they need
   try { S.epRecognition.start(); } catch(e) { console.warn(e); }
 }
 
